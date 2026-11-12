@@ -19,6 +19,10 @@ export const MARKERS = {
   seeds: '// @ns:seeds',
   /** libs/common/src/permissions.ts, inside PERMISSION_CATALOG. */
   permissions: '// @ns:permissions',
+  /** apps/api/src/config/swagger.ts, route prefixes of the admin document. */
+  swaggerAdmin: '// @ns:swagger-admin',
+  /** apps/api/src/config/swagger.ts, route prefixes of the client document. */
+  swaggerClient: '// @ns:swagger-client',
   /** docker-compose.yml, end of `services:`. */
   composeServices: '# @ns:services',
   /** docker-compose.yml, end of `volumes:`. */

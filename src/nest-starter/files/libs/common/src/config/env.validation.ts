@@ -61,6 +61,18 @@ export class EnvironmentVariables {
   @Type(() => Number)
   @IsInt()
   AUTH_THROTTLE_LIMIT?: number;
+
+  @IsOptional()
+  @IsIn(BOOLEAN)
+  SWAGGER_ENABLED?: string;
+
+  @IsOptional()
+  @IsString()
+  SWAGGER_USER?: string;
+
+  @IsOptional()
+  @IsString()
+  SWAGGER_PASSWORD?: string;
   // @ns:env
 }
 

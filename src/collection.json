@@ -17,6 +17,11 @@
       "description": "Add a seed file in libs/database/src/seeds and register it (npm run seed -- <name>)",
       "factory": "./add-ons/seed/index#seed",
       "schema": "./add-ons/seed/schema.json"
+    },
+    "openapi-client": {
+      "description": "Add an openapi-generator client target (typescript-angular, dart-dio, typescript-fetch): openapitools.json and api:generate scripts",
+      "factory": "./add-ons/openapi-client/index#openapiClient",
+      "schema": "./add-ons/openapi-client/schema.json"
     }
   }
 }

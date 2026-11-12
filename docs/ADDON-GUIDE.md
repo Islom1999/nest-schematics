@@ -46,6 +46,31 @@ Register it in `src/collection.json` (`"factory": "./add-ons/<name>/index#<camel
    explicit. No secrets in code; anything secret comes from env.
 7. **Security defaults:** verify every token signature, hash OTPs and refresh tokens, never
    log secrets, rate-limit auth endpoints, no master codes or bypass flags.
+8. **Swagger export runs without a database.** `npm run swagger:export` sets
+   `SWAGGER_EXPORT=1`, creates the app without initialising it, and writes `openapi/*.json`:
+   - the TypeORM DataSource is not connected (`manualInitialization`);
+   - `onModuleInit` / `onApplicationBootstrap` never run, so bootstrap DB work (seeding,
+     cache warm-up, schedulers) belongs there, never in constructors;
+   - any provider or async factory that connects on creation (Redis, queues, SDK clients,
+     webhooks registration) must check `isSwaggerExport()` from `@app/common` and skip it
+     (return a stub or `null`). From `libs/database` import it as
+     `@app/common/swagger/export-mode`;
+   - a required env key with no default breaks the export in CI: make keys optional or add a
+     throwaway value in `swaggerExportEnvDefaults()`.
+9. **OpenAPI contract** (generated clients depend on it):
+   - routes go to a document by prefix (`apps/api/src/config/swagger.ts`): `admin/*` and
+     `auth/*` → `admin`, the rest → `client`. To route a prefix elsewhere, insert it at the
+     `MARKERS.swaggerAdmin` or `MARKERS.swaggerClient` marker, e.g.
+     `insertAtMarker(tree, '<apiSrc>/config/swagger.ts', MARKERS.swaggerClient, "'auth/client',")`
+     (the longest prefix wins);
+   - `operationId` is `<controller><Method>` (`ProductController.findAll` → `productFindAll`):
+     controller class names must be unique, handler names are the client's method names;
+   - every response has a type: `@ApiOkResponse({ type: Dto })`, pages use
+     `@ApiPaginatedResponse(Model)`; an overriding handler loses the base decorators, so repeat them;
+   - every enum is named: `@ApiProperty({ ...apiEnum(ProductStatus, 'ProductStatus') })`
+     (`swagger:export` lists inline enums);
+   - protected routes use `@ApiBearerAuth()` (scheme `bearer`);
+   - no `*/` in descriptions (generators copy them into code comments).
 
 ## Tests
 

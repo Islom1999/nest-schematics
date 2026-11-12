@@ -14,7 +14,8 @@ npm run seed                    # boshlang'ich ma'lumotlar (ixtiyoriy)
 
 - API: `http://localhost:3000/api`
 - Health: `http://localhost:3000/api/health` (`/live`, `/ready`)
-- Swagger: `http://localhost:3000/docs` (`SWAGGER_ENABLED=false` bilan o'chadi)
+- Swagger: `http://localhost:3000/docs` (`/docs/admin`, `/docs/client`; `SWAGGER_ENABLED=false` bilan o'chadi, prod'da `SWAGGER_USER`/`SWAGGER_PASSWORD` shart)
+- OpenAPI: `npm run swagger:export` → `openapi/admin.json`, `openapi/client.json` (DB kerak emas); klient: `npm run g -- openapi-client --name admin --target ../admin/src/app/core/api`
 - Kirish: `POST /api/auth/sign-in` `{ email, password }` → `{ accessToken, user }`
 
 ## Ilovalar va skriptlar

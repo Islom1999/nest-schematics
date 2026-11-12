@@ -23,7 +23,10 @@ import { runPendingMigrations } from './run-migrations';
       }),
       dataSourceFactory: async (options) => {
         const { migrationsRun, ...rest } = options as DataSourceOptions;
-        const dataSource = await new DataSource({ ...rest, migrationsRun: false }).initialize();
+        const dataSource = new DataSource({ ...rest, migrationsRun: false });
+        // `npm run swagger:export` (manualInitialization) never connects.
+        if ((options as TypeOrmModuleOptions).manualInitialization) return dataSource;
+        await dataSource.initialize();
         if (migrationsRun) await runPendingMigrations(dataSource);
         return dataSource;
       },

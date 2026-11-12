@@ -24,7 +24,8 @@
     "migration:run": "npm run typeorm -- migration:run -d libs/database/src/data-source.ts",
     "migration:revert": "npm run typeorm -- migration:revert -d libs/database/src/data-source.ts",
     "migration:show": "npm run typeorm -- migration:show -d libs/database/src/data-source.ts",
-    "seed": "ts-node --transpile-only -r tsconfig-paths/register libs/database/src/seed.ts"
+    "seed": "ts-node --transpile-only -r tsconfig-paths/register libs/database/src/seed.ts",
+    "swagger:export": "ts-node -T -r tsconfig-paths/register apps/api/src/config/swagger-export.ts"
   },
   "engines": {
     "node": ">=20.19.0"
