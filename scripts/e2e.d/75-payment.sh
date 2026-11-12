@@ -5,11 +5,16 @@
 # perform), Click prepare/complete with an MD5 sign (bad sign -1), wallet
 # balances, admin/payments, ten parallel wallet debits under the row lock, and
 # no migration diff for the payment tables.
+# Then Uzum, Paynet and inPAY (inPAY's API is a local stub server): success,
+# bad auth, repeated calls change nothing, reverse / cancel.
 run_g payment payme --skip-install
 run_g payment click --skip-install
+run_g payment uzum --skip-install
+run_g payment paynet --skip-install
+run_g payment inpay --skip-install
 
 if [ -z "${E2E_RERUN:-}" ]; then
-  node <<'NODE'
+  node - "$(node -e 'const s=require("net").createServer().listen(0,"127.0.0.1",()=>{process.stdout.write(String(s.address().port));s.close()})')" <<'NODE'
 const fs = require('fs');
 const set = {
   PAYME_MERCHANT_ID: 'e2e-merchant',
@@ -18,6 +23,15 @@ const set = {
   CLICK_SERVICE_ID: '1234',
   CLICK_MERCHANT_ID: '5678',
   CLICK_SECRET_KEY: 'e2e-click-secret',
+  UZUM_SERVICE_ID: '4321',
+  UZUM_LOGIN: 'e2e-uzum',
+  UZUM_PASSWORD: 'e2e-uzum-password',
+  PAYNET_LOGIN: 'e2e-paynet',
+  PAYNET_PASSWORD: 'e2e-paynet-password',
+  INPAY_MERCHANT_ID: 'e2e-inpay',
+  INPAY_MERCHANT_TOKEN: 'e2e-inpay-token',
+  // The stub inPAY API listens here during the smoke (a free port picked now).
+  INPAY_API_URL: `http://127.0.0.1:${process.argv[2]}/api/v1`,
 };
 let env = fs.readFileSync('.env', 'utf8');
 for (const [k, v] of Object.entries(set)) {
@@ -26,7 +40,7 @@ for (const [k, v] of Object.entries(set)) {
 }
 fs.writeFileSync('.env', env);
 NODE
-  E2E_SMOKE="${E2E_SMOKE:-}"$'\n'payment_smoke
+  E2E_SMOKE="${E2E_SMOKE:-}"$'\n'payment_smoke$'\n'payment_providers_smoke
 fi
 
 payment_smoke() {
@@ -178,4 +192,193 @@ payment_smoke() {
     echo "$body"; fail "migration:generate finds differences in the payment tables"
   fi
   log "Payments OK"
+}
+
+payment_providers_smoke() {
+  log "Smoke: payments (Uzum, Paynet, inPAY)"
+  local base="http://localhost:$API_PORT/api" email user access admin body invoice account trans_id order status port stub_pid i
+  local PP_STATUS=""
+  pp_json() { node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const v=JSON.parse(s)$1;process.stdout.write(v===undefined?'':typeof v==='object'?JSON.stringify(v):String(v))})"; }
+  pp_env() { grep -E "^$1=" .env | cut -d= -f2-; }
+  pp_psql() { PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 -Atc "$1"; }
+  pp_call() {
+    local args=(-s -o "$WORK/pp.txt" -w '%{http_code}' -X "$1" "$base/$2" -H 'content-type: application/json')
+    [ -n "${3:-}" ] && args+=(-d "$3")
+    [ -n "${4:-}" ] && args+=(-H "authorization: Bearer $4")
+    PP_STATUS=$(curl "${args[@]}")
+  }
+  pp_expect() { [ "$PP_STATUS" = "$1" ] || { cat "$WORK/pp.txt"; echo; fail "$2: got HTTP $PP_STATUS, expected $1"; }; }
+  pp_balance() { pp_call GET client/wallet "" "$access"; pp_json '.balance' <"$WORK/pp.txt"; }
+  pp_checkout() {
+    pp_call POST client/payments/checkout "{\"provider\":\"$1\",\"amount\":$2}" "$access"
+    pp_expect 200 "$1 checkout"
+    invoice=$(pp_json '.invoiceNumber' <"$WORK/pp.txt")
+  }
+  # uzum OPERATION FIELDS_JSON [PASSWORD]: writes the body to $WORK/uz.txt, prints the HTTP status.
+  uzum() {
+    local password="${3:-$(pp_env UZUM_PASSWORD)}"
+    curl -s -o "$WORK/uz.txt" -w '%{http_code}' -X POST "$base/payments/uzum/$1" -H 'content-type: application/json' \
+      -H "authorization: Basic $(printf '%s:%s' "$(pp_env UZUM_LOGIN)" "$password" | base64)" \
+      -d "{\"serviceId\":$(pp_env UZUM_SERVICE_ID),\"timestamp\":$(date +%s)000,$2}"
+  }
+  uz() { pp_json "$1" <"$WORK/uz.txt"; }
+  # paynet METHOD PARAMS_JSON [PASSWORD]: JSON-RPC with Basic <login>:<password>.
+  paynet() {
+    local password="${3:-$(pp_env PAYNET_PASSWORD)}"
+    curl -s -X POST "$base/payments/paynet" -H 'content-type: application/json' \
+      -H "authorization: Basic $(printf '%s:%s' "$(pp_env PAYNET_LOGIN)" "$password" | base64)" \
+      -d "{\"jsonrpc\":\"2.0\",\"id\":$RANDOM,\"method\":\"$1\",\"params\":$2}"
+  }
+  # Tashkent time (UTC+5) shifted by $1 seconds, as Paynet sends it.
+  paynet_time() { node -p "new Date(Date.now() + 5 * 3600e3 + ($1) * 1000).toISOString().slice(0, 19).replace('T', ' ')"; }
+  inpay_webhook() { curl -s -o "$WORK/pp-hook.txt" -w '%{http_code}' -X POST "$base/payments/inpay/webhook" -H 'content-type: application/json' -d "$1"; }
+
+  email="e2e-pay2-$(date +%s)-$$@example.com"
+  pp_call POST client/auth/email/sign-up "{\"email\":\"$email\",\"password\":\"PayPass12345\",\"name\":\"Payer2\"}"
+  pp_expect 200 "client sign-up"
+  pp_call POST client/auth/email/sign-in "{\"email\":\"$email\",\"password\":\"PayPass12345\"}"
+  pp_expect 200 "client sign-in"
+  access=$(pp_json '.accessToken' <"$WORK/pp.txt")
+  user=$(pp_psql "SELECT id FROM users WHERE email = '$email'")
+  account=$(pp_psql "SELECT account_no FROM users WHERE id = '$user'")
+
+  # ── Uzum ───────────────────────────────────────────────────────────────
+  pp_checkout uzum 400000
+  [ "$(pp_json '.payUrl' <"$WORK/pp.txt")" = "" ] || fail "Uzum payUrl without UZUM_PAY_URL: $(cat "$WORK/pp.txt")"
+  [ "$(uzum check "\"params\":{\"account\":\"$invoice\"}" wrong-password)" = "400" ] && [ "$(uz '.errorCode')" = "10001" ] \
+    || fail "Uzum bad auth: $(cat "$WORK/uz.txt")"
+  [ "$(uzum check "\"params\":{\"account\":\"$invoice\"}")" = "200" ] && [ "$(uz '.status')" = "OK" ] || fail "Uzum check: $(cat "$WORK/uz.txt")"
+  trans_id="uz-$invoice"
+  [ "$(uzum create "\"transId\":\"$trans_id\",\"params\":{\"account\":\"$invoice\"},\"amount\":300000")" = "400" ] \
+    || fail "Uzum create with a wrong amount: $(cat "$WORK/uz.txt")"
+  for i in 1 2; do
+    [ "$(uzum create "\"transId\":\"$trans_id\",\"params\":{\"account\":\"$invoice\"},\"amount\":400000")" = "200" ] && [ "$(uz '.status')" = "CREATED" ] \
+      || fail "Uzum create #$i: $(cat "$WORK/uz.txt")"
+  done
+  for i in 1 2; do
+    [ "$(uzum confirm "\"transId\":\"$trans_id\"")" = "200" ] && [ "$(uz '.status')" = "CONFIRMED" ] || fail "Uzum confirm #$i: $(cat "$WORK/uz.txt")"
+  done
+  [ "$(pp_balance)" = "400000" ] || fail "wallet after Uzum: $(cat "$WORK/pp.txt")"
+  [ "$(uzum status "\"transId\":\"$trans_id\"")" = "200" ] && [ "$(uz '.status')" = "CONFIRMED" ] || fail "Uzum status: $(cat "$WORK/uz.txt")"
+  for i in 1 2; do
+    [ "$(uzum reverse "\"transId\":\"$trans_id\"")" = "200" ] && [ "$(uz '.status')" = "REVERSED" ] || fail "Uzum reverse #$i: $(cat "$WORK/uz.txt")"
+  done
+  [ "$(pp_balance)" = "0" ] || fail "wallet after the Uzum reverse: $(cat "$WORK/pp.txt")"
+
+  # ── Paynet ─────────────────────────────────────────────────────────────
+  pp_checkout paynet 300000
+  [ "$(paynet GetInformation "{\"fields\":{\"account\":\"$invoice\"}}" wrong-password | pp_json '.error.code')" = "412" ] || fail "Paynet bad auth"
+  body=$(paynet GetInformation "{\"fields\":{\"account\":\"$invoice\"}}")
+  [ "$(echo "$body" | pp_json '.result.status')" = "0" ] || fail "Paynet GetInformation: $body"
+  trans_id="$(date +%s)$$"
+  body=$(paynet PerformTransaction "{\"transactionId\":$trans_id,\"amount\":300000,\"fields\":{\"account\":\"$invoice\"},\"timestamp\":\"$(paynet_time 0)\"}")
+  [ -n "$(echo "$body" | pp_json '.result.providerTrnId')" ] || fail "Paynet PerformTransaction: $body"
+  body=$(paynet PerformTransaction "{\"transactionId\":$trans_id,\"amount\":300000,\"fields\":{\"account\":\"$invoice\"}}")
+  [ "$(echo "$body" | pp_json '.error.code')" = "201" ] || fail "a repeated Paynet PerformTransaction is not 201: $body"
+  [ "$(pp_balance)" = "300000" ] || fail "wallet after Paynet: $(cat "$WORK/pp.txt")"
+  [ "$(paynet CheckTransaction "{\"transactionId\":$trans_id}" | pp_json '.result.transactionState')" = "1" ] || fail "Paynet CheckTransaction"
+  body=$(paynet CancelTransaction "{\"transactionId\":$trans_id}")
+  [ "$(echo "$body" | pp_json '.result.transactionState')" = "2" ] || fail "Paynet CancelTransaction: $body"
+  [ "$(paynet CancelTransaction "{\"transactionId\":$trans_id}" | pp_json '.error.code')" = "202" ] || fail "a repeated Paynet cancel is not 202"
+  [ "$(pp_balance)" = "0" ] || fail "wallet after the Paynet cancel: $(cat "$WORK/pp.txt")"
+  # A direct top-up by the user's account number, then GetStatement (performed ones only).
+  body=$(paynet PerformTransaction "{\"transactionId\":$((trans_id + 1)),\"amount\":200000,\"fields\":{\"account\":\"$account\"},\"timestamp\":\"$(paynet_time 0)\"}")
+  [ -n "$(echo "$body" | pp_json '.result.providerTrnId')" ] || fail "Paynet top-up by account number: $body"
+  body=$(paynet GetStatement "{\"dateFrom\":\"$(paynet_time -3600)\",\"dateTo\":\"$(paynet_time 3600)\"}")
+  [ "$(echo "$body" | pp_json ".result.statements.filter(s => s.transactionId === $((trans_id + 1)) && s.amount === 200000).length")" = "1" ] \
+    && [ "$(echo "$body" | pp_json ".result.statements.filter(s => s.transactionId === $trans_id).length")" = "0" ] || fail "Paynet GetStatement: $body"
+  [ "$(pp_balance)" = "200000" ] || fail "wallet after the Paynet top-up"
+
+  # ── inPAY (a local stub of its API) ────────────────────────────────────
+  port=$(pp_env INPAY_API_URL | sed -E 's#^http://127\.0\.0\.1:([0-9]+)/.*#\1#')
+  cat >"$WORK/inpay-stub.js" <<'STUB'
+// Stub of the inPAY API (authorization, create, transactions); /__set and /__stats drive the smoke.
+const http = require('http');
+const [port, parent] = process.argv.slice(2).map(Number);
+const orders = new Map();
+const stats = { auth: 0 };
+let seq = 0;
+const send = (res, code, body) => {
+  res.writeHead(code, { 'content-type': 'application/json' });
+  res.end(JSON.stringify(body));
+};
+http
+  .createServer((req, res) => {
+    let raw = '';
+    req.on('data', (d) => (raw += d)).on('end', () => {
+      const url = new URL(req.url, 'http://stub');
+      const body = raw ? JSON.parse(raw) : {};
+      if (url.pathname === '/__set') return send(res, 200, Object.assign(orders.get(body.order_id) ?? {}, body));
+      if (url.pathname === '/__stats') return send(res, 200, stats);
+      if (url.pathname === '/api/v1/authorization/') {
+        stats.auth++;
+        if (url.searchParams.get('merchant_token') !== 'e2e-inpay-token') return send(res, 401, { success: false });
+        return send(res, 200, { success: true, bearer_token: 'stub-bearer' });
+      }
+      if (req.headers.authorization !== 'Bearer stub-bearer') return send(res, 401, { success: false });
+      if (url.pathname === '/api/v1/create/' && req.method === 'POST') {
+        const order_id = `e2e-${process.pid}-${++seq}`;
+        orders.set(order_id, { order_id, status: 'pending', amount: body.amount });
+        return send(res, 200, { success: true, order_id, pay_url: `http://127.0.0.1:${port}/pay/${order_id}` });
+      }
+      if (url.pathname === '/api/v1/transactions/') {
+        const order = orders.get(url.searchParams.get('order_id'));
+        return order ? send(res, 200, { success: true, data: order }) : send(res, 404, { success: false });
+      }
+      send(res, 404, {});
+    });
+  })
+  .listen(port, '127.0.0.1');
+// Never outlive the e2e run.
+setInterval(() => {
+  try {
+    process.kill(parent, 0);
+  } catch {
+    process.exit(0);
+  }
+}, 1000);
+STUB
+  node "$WORK/inpay-stub.js" "$port" "$$" >"$WORK/inpay-stub.log" 2>&1 &
+  stub_pid=$!
+  for i in $(seq 1 50); do curl -s "http://127.0.0.1:$port/__stats" >/dev/null 2>&1 && break; sleep 0.1; done
+  pp_stub() { curl -s -X POST "http://127.0.0.1:$port/$1" -H 'content-type: application/json' -d "$2"; }
+
+  pp_checkout inpay 500000
+  body=$(pp_json '.payUrl' <"$WORK/pp.txt")
+  order="${body##*/}"
+  [ "$body" = "http://127.0.0.1:$port/pay/$order" ] || fail "inPAY payUrl: $(cat "$WORK/pp.txt")"
+  [ "$(pp_psql "SELECT status || ':' || amount FROM payment_transactions WHERE provider = 'inpay' AND external_id = '$order'")" = "pending:500000" ] \
+    || fail "inPAY pending payment"
+  # A forged "success" body changes nothing: the API still says pending.
+  status=$(inpay_webhook "{\"order_id\":\"$order\",\"status\":\"success\",\"amount\":\"5000\"}")
+  [ "$status" = "200" ] && [ "$(pp_balance)" = "200000" ] || fail "a forged inPAY webhook: HTTP $status, $(cat "$WORK/pp.txt")"
+  pp_stub __set "{\"order_id\":\"$order\",\"status\":\"success\"}" >/dev/null
+  # Five concurrent webhooks, then a repeated one: credited once.
+  local pids=()
+  for i in 1 2 3 4 5; do
+    inpay_webhook "{\"order_id\":\"$order\"}" >/dev/null &
+    pids+=($!)
+  done
+  wait "${pids[@]}"
+  [ "$(inpay_webhook "{\"order_id\":\"$order\"}")" = "200" ] || fail "inPAY webhook: $(cat "$WORK/pp-hook.txt")"
+  [ "$(pp_balance)" = "700000" ] || fail "wallet after inPAY: $(cat "$WORK/pp.txt")"
+  [ "$(inpay_webhook '{"order_id":"e2e-unknown"}')" = "200" ] || fail "inPAY webhook for an unknown order"
+  [ "$(inpay_webhook '{"order_id":"../x"}')" = "400" ] || fail "inPAY webhook with a bad order_id"
+  # A cancelled order (one cached token for both checkouts), then an admin refund of the paid one.
+  pp_checkout inpay 400000
+  body=$(pp_json '.payUrl' <"$WORK/pp.txt")
+  [ "$(pp_stub __stats '{}' | pp_json '.auth')" = "1" ] || fail "the inPAY token is not cached"
+  pp_stub __set "{\"order_id\":\"${body##*/}\",\"status\":\"cancelled\"}" >/dev/null
+  inpay_webhook "{\"order_id\":\"${body##*/}\"}" >/dev/null
+  [ "$(pp_psql "SELECT status FROM payment_transactions WHERE provider = 'inpay' AND external_id = '${body##*/}'")" = "cancelled" ] \
+    || fail "inPAY cancelled order"
+  pp_call POST auth/sign-in "$(node -p 'JSON.stringify({ email: process.argv[1], password: process.argv[2] })' "$(pp_env ADMIN_EMAIL)" "$(pp_env ADMIN_PASSWORD)")"
+  pp_expect 200 "admin sign-in"
+  admin=$(pp_json '.accessToken' <"$WORK/pp.txt")
+  pp_call POST "admin/payments/$(pp_psql "SELECT id FROM payment_transactions WHERE provider = 'inpay' AND external_id = '$order'")/cancel" \
+    '{"refundedExternally":true,"comment":"e2e inPAY refund"}' "$admin"
+  pp_expect 200 "admin cancel of a paid inPAY payment"
+  [ "$(pp_balance)" = "200000" ] || fail "wallet after the inPAY refund: $(cat "$WORK/pp.txt")"
+  kill "$stub_pid" 2>/dev/null || true
+  log "Uzum, Paynet, inPAY OK"
 }

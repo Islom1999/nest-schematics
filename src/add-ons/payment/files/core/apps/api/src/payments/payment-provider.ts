@@ -11,8 +11,12 @@ export interface PaymentProviderAdapter {
   readonly provider: string;
   /** Keys are set: checkout works (otherwise 503) and webhooks are accepted. */
   isConfigured(): boolean;
-  /** URL of the provider's pay page for an invoice. */
-  payUrl(invoice: PaymentInvoice): string;
+  /**
+   * URL of the provider's pay page for an invoice. Async for providers that
+   * create the order through their API first (inPAY); may be empty when the
+   * user pays by the invoice number in the provider's app (Uzum, Paynet).
+   */
+  payUrl(invoice: PaymentInvoice): string | Promise<string>;
   /** Provider `state` code of a transaction cancelled by an admin (`paid` = it was paid before). */
   cancelState(paid: boolean): number;
   /**

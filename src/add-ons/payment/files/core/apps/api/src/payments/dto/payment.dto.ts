@@ -53,7 +53,7 @@ export class CheckoutResponseDto {
   @ApiProperty()
   expiresAt: Date;
 
-  @ApiProperty({ type: String, description: 'Open this URL (browser or webview) to pay' })
+  @ApiProperty({ type: String, description: 'Open this URL (browser or webview) to pay. Empty for providers paid by invoiceNumber in their app (Uzum, Paynet) unless a pay URL is configured' })
   payUrl: string;
 }
 

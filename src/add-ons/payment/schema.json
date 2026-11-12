@@ -1,13 +1,13 @@
 {
   "$schema": "http://json-schema.org/schema",
   "$id": "PaymentAddonSchema",
-  "title": "Payments (Payme / Click) with invoices, a state machine and wallets",
+  "title": "Payments (Payme / Click / Uzum / Paynet / inPAY) with invoices, a state machine and wallets",
   "type": "object",
   "properties": {
     "provider": {
       "type": "string",
-      "enum": ["payme", "click"],
-      "description": "Payment provider to add: payme (Payme Business Merchant API) or click (Click SHOP API)",
+      "enum": ["payme", "click", "uzum", "paynet", "inpay"],
+      "description": "Payment provider to add: payme (Payme Business Merchant API), click (Click SHOP API), uzum (Uzum Bank Merchant API), paynet (Paynet JSON-RPC) or inpay (inPAY aggregator)",
       "$default": {
         "$source": "argv",
         "index": 0

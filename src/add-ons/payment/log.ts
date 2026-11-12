@@ -8,6 +8,9 @@ export const PAYMENT_LOG_MARKER = '// @ns:payment-log';
 export const PAYMENT_WEBHOOK_CONTROLLERS: Record<string, string> = {
   payme: 'apps/api/src/payments/payme/payme.controller.ts',
   click: 'apps/api/src/payments/click/click.controller.ts',
+  uzum: 'apps/api/src/payments/uzum/uzum.controller.ts',
+  paynet: 'apps/api/src/payments/paynet/paynet.controller.ts',
+  inpay: 'apps/api/src/payments/inpay/inpay.controller.ts',
 };
 
 function prefixed(root: string, path: string): string {
