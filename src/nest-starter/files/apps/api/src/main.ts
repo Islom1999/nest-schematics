@@ -35,7 +35,11 @@ async function bootstrap() {
     .split(',')
     .map((o) => o.trim())
     .filter(Boolean);
-  app.enableCors({ origin: origins.length ? origins : ['http://localhost:4200'], credentials: true });
+  app.enableCors({
+    origin: origins.length ? origins : ['http://localhost:4200'],
+    credentials: true,
+    exposedHeaders: ['X-Total-Count', 'X-Export-Truncated', 'Content-Disposition', 'X-Request-Id'],
+  });
 
   // Frontend (fuse-schematics) calls `${apiUrl}/admin/<resource>` with apiUrl = http://host:3000/api
   app.setGlobalPrefix('api');
