@@ -17,6 +17,8 @@ const PG_ERRORS: Record<string, [number, string]> = {
  *   { statusCode, error, message, path, timestamp }
  * `message` is a string or (validation) string[]. TypeORM errors are mapped
  * to 4xx where it makes sense; anything unexpected is a logged 500.
+ * Extra fields of an HttpException body (e.g. `{ code, limit, resetAt }`) are
+ * kept; the standard fields above always win.
  */
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
@@ -30,11 +32,18 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
     let status = HttpStatus.INTERNAL_SERVER_ERROR;
     let message: unknown = 'Internal server error';
+    let extra: Record<string, unknown> = {};
 
     if (exception instanceof HttpException) {
       status = exception.getStatus();
       const body = exception.getResponse();
-      message = typeof body === 'string' ? body : ((body as { message?: unknown }).message ?? exception.message);
+      if (typeof body === 'string') {
+        message = body;
+      } else {
+        const { message: bodyMessage, ...rest } = body as Record<string, unknown>;
+        message = bodyMessage ?? exception.message;
+        extra = rest;
+      }
     } else if (exception instanceof QueryFailedError) {
       const code = (exception as QueryFailedError & { code?: string }).code ?? '';
       const mapped = PG_ERRORS[code];
@@ -52,6 +61,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
     }
 
     res.status(status).json({
+      ...extra,
       statusCode: status,
       error: STATUS_CODES[status] ?? 'Error',
       message,
