@@ -7,12 +7,12 @@ import type { AdminPrincipal } from '../../auth/auth.types';
 import { CurrentAdmin } from '../../auth/current-admin.decorator';
 import { PageQueryDto } from '../dto/payment.dto';
 import { AdminWalletsService } from './admin-wallets.service';
-import { AdjustWalletDto } from './wallet.dto';
+import { AdjustWalletDto, ReverseWalletTransactionDto } from './wallet.dto';
 
 /**
- * `/api/admin/wallets`: balances (read: `payment.read`) and manual
- * adjustments with a note (`payment.write`). Adjustments lock the wallet like
- * every other balance change and never overdraw it.
+ * `/api/admin/wallets`: balances (read: `payment.read`), manual adjustments
+ * with a note and reversals of ledger rows with a comment (`payment.write`).
+ * Both lock the wallet like every other balance change and never overdraw it.
  */
 @AdminResource('wallets', { read: ['payment.read'], write: ['payment.write'] })
 export class AdminWalletsController {
@@ -34,6 +34,24 @@ export class AdminWalletsController {
   @ApiOkResponse({ type: WalletTransaction })
   adjust(@Body() dto: AdjustWalletDto, @CurrentAdmin() admin: AdminPrincipal): Promise<WalletTransaction> {
     return this.service.adjust(dto.userId, dto.amount, dto.note, admin.id);
+  }
+
+  @AdminAccess('write')
+  @HttpCode(HttpStatus.OK)
+  @Post('transactions/:id/reverse')
+  @ApiOperation({
+    summary: 'Reverse one ledger row (adjust, purchase, refund) with a reversal row of the opposite amount',
+    description:
+      'Once per row: a second reversal is 409 already_reversed. 409 insufficient_funds when the balance would go negative, ' +
+      '409 not_reversible for reversal rows and rows of provider payments (cancel the payment instead).',
+  })
+  @ApiOkResponse({ type: WalletTransaction })
+  reverse(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ReverseWalletTransactionDto,
+    @CurrentAdmin() admin: AdminPrincipal,
+  ): Promise<WalletTransaction> {
+    return this.service.reverse(id, dto.comment, admin.id);
   }
 
   @AdminAccess('read')

@@ -62,3 +62,11 @@ export class AdjustWalletDto {
   @MaxLength(200)
   note: string;
 }
+
+export class ReverseWalletTransactionDto {
+  @ApiProperty({ example: 'Adjustment made by mistake', description: 'Why the row is reversed (kept in the ledger note)' })
+  @IsString()
+  @MinLength(3)
+  @MaxLength(200)
+  comment: string;
+}

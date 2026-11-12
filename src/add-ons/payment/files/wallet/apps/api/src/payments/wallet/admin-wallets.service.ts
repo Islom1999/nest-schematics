@@ -5,7 +5,7 @@ import { BaseCrudService, PaginatedResult } from '@app/common';
 import { User, Wallet, WalletTransaction } from '@app/database';
 import { WalletService } from './wallet.service';
 
-/** `admin/wallets`: balances with their users, the ledger and manual adjustments. */
+/** `admin/wallets`: balances with their users, the ledger, manual adjustments and reversals. */
 @Injectable()
 export class AdminWalletsService extends BaseCrudService<Wallet> {
   protected override alias = 'wallet';
@@ -39,5 +39,10 @@ export class AdminWalletsService extends BaseCrudService<Wallet> {
   async adjust(userId: string, amount: number, note: string, adminId: string): Promise<WalletTransaction> {
     if (!(await this.users.exists({ where: { id: userId } }))) throw new NotFoundException('User not found');
     return this.wallet.adjust(userId, amount, `${note} (admin ${adminId})`);
+  }
+
+  /** The admin id goes into the ledger note next to the comment (audit). */
+  reverse(transactionId: string, comment: string, adminId: string): Promise<WalletTransaction> {
+    return this.wallet.reverse(transactionId, `${comment} (admin ${adminId})`);
   }
 }

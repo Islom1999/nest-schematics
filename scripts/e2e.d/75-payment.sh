@@ -3,7 +3,9 @@
 # Smoke: a client user checks out, Payme JSON-RPC (CheckPerform, Create,
 # Perform, CheckTransaction, GetStatement, wrong auth -32504, cancel after
 # perform), Click prepare/complete with an MD5 sign (bad sign -1), wallet
-# balances, admin/payments, ten parallel wallet debits under the row lock, and
+# balances, admin/payments, ten parallel wallet debits under the row lock,
+# admin invoices, the summary against the known payments, the CSV export,
+# wallet reversals (once, also with ten parallel calls; never negative) and
 # no migration diff for the payment tables.
 # Then Uzum, Paynet and inPAY (inPAY's API is a local stub server): success,
 # bad auth, repeated calls change nothing, reverse / cancel.
@@ -46,8 +48,11 @@ fi
 payment_smoke() {
   log "Smoke: payments (Payme, Click, wallet)"
   local base="http://localhost:$API_PORT/api" email user access admin body invoice payme_id now tx click_id prepare_id status ok
+  local since row credit headers
   local PM_STATUS=""
   pm_json() { node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const v=JSON.parse(s)$1;process.stdout.write(v===undefined?'':typeof v==='object'?JSON.stringify(v):String(v))})"; }
+  # pm_x EXPR: a JS expression over x = the last response ($WORK/pm.txt).
+  pm_x() { node -e 'const x=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.stdout.write(String(new Function("x","return ("+process.argv[2]+")")(x)))' "$WORK/pm.txt" "$1"; }
   pm_obj() { node -e 'const a=process.argv.slice(1),o={};for(let i=0;i<a.length;i+=2)o[a[i]]=/^-?\d+$/.test(a[i+1])?Number(a[i+1]):a[i+1];process.stdout.write(JSON.stringify(o))' "$@"; }
   pm_psql() { PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 -Atc "$1"; }
   pm_call() {
@@ -87,6 +92,8 @@ payment_smoke() {
   pm_expect 200 "client sign-in"
   access=$(pm_json '.accessToken' <"$WORK/pm.txt")
   user=$(pm_psql "SELECT id FROM users WHERE email = '$email'")
+  # The summary / export window: only this smoke's two payments are created after this.
+  since=$(node -p 'new Date(Date.now() - 1000).toISOString()')
 
   # ── Payme ──────────────────────────────────────────────────────────────
   pm_call POST client/payments/checkout '{"provider":"payme","amount":500000}' "$access"
@@ -185,6 +192,102 @@ payment_smoke() {
   [ "$(pm_psql "SELECT balance FROM wallets WHERE user_id = '$user'")" = "0" ] || fail "balance after parallel debits"
   pm_call GET client/wallet "" "$access"
   [ "$(pm_json '.balance' <"$WORK/pm.txt")" = "0" ] || fail "client/wallet after parallel debits"
+
+  # ── admin: invoices ───────────────────────────────────────────────────
+  pm_call POST admin/payments/invoices/pagination "{\"first\":0,\"rows\":10,\"filters\":{\"userId\":{\"value\":\"$user\",\"matchMode\":\"equals\"}}}" "$admin"
+  pm_expect 200 "admin/payments/invoices/pagination"
+  [ "$(pm_json '.count' <"$WORK/pm.txt")" = "2" ] || fail "invoices of the user: $(cat "$WORK/pm.txt")"
+  body=$(pm_x 'x.data.find((i) => i.provider === "click").id')
+  pm_call GET "admin/payments/invoices/$body" "" "$admin"
+  pm_expect 200 "admin/payments/invoices/:id"
+  [ "$(pm_x '[x.status, x.amount, x.transactions.length, x.transactions[0]?.externalId].join(" ")')" = "paid 300000 1 $click_id" ] \
+    || fail "invoice detail: $(cat "$WORK/pm.txt")"
+  pm_call GET "admin/payments/invoices/00000000-0000-4000-8000-000000000000" "" "$admin"
+  pm_expect 404 "an unknown invoice"
+  pm_call POST admin/payments/invoices/pagination '{"first":0,"rows":10}' "$access"
+  pm_expect 401 "a user token on admin/payments/invoices"
+
+  # ── admin: summary (since $since: Payme 500000 cancelled, Click 300000 paid) ──
+  pm_call GET "admin/payments/summary?from=$since" "" "$admin"
+  pm_expect 200 "admin/payments/summary"
+  body='[x.revenue, x.paidCount, x.count,
+    ...["paid", "cancelled", "pending"].map((s) => x.byStatus.filter((r) => r.status === s).map((r) => `${r.count}/${r.amount}`)),
+    ...["click", "payme"].map((p) => x.byProvider.filter((r) => r.provider === p).map((r) => `${r.count}/${r.amount}/${r.paidCount}/${r.paidAmount}`))].join(" ")'
+  [ "$(pm_x "$body")" = "300000 1 2 1/300000 1/500000 0/0 1/300000/1/300000 1/500000/0/0" ] || fail "summary: $(cat "$WORK/pm.txt")"
+  [ "$(pm_psql "SELECT COALESCE(SUM(amount) FILTER (WHERE status = 'paid'), 0) || ' ' || COUNT(*) FROM payment_transactions WHERE created_at >= '$since' AND deleted_at IS NULL")" = \
+    "300000 2" ] || fail "the summary window holds other payments"
+  pm_call GET "admin/payments/summary?from=$since&provider=payme" "" "$admin"
+  [ "$(pm_x '`${x.revenue} ${x.count} ${x.byProvider.length}`')" = "0 1 1" ] || fail "summary of payme: $(cat "$WORK/pm.txt")"
+  pm_call GET "admin/payments/summary?from=not-a-date" "" "$admin"
+  pm_expect 400 "summary with a bad date"
+  pm_call GET "admin/payments/summary" "" "$access"
+  pm_expect 401 "a user token on admin/payments/summary"
+
+  # ── admin: CSV export ─────────────────────────────────────────────────
+  headers="$WORK/pm-csv-headers.txt"
+  PM_STATUS=$(curl -s -G -o "$WORK/pm.csv" -D "$headers" -w '%{http_code}' "$base/admin/payments/export" \
+    --data-urlencode "from=$since" -H "authorization: Bearer $admin")
+  pm_expect 200 "admin/payments/export"
+  grep -qi '^content-type: text/csv' "$headers" || { cat "$headers"; fail "export content-type"; }
+  grep -qi '^x-total-count: 2' "$headers" || { cat "$headers"; fail "export X-Total-Count"; }
+  [ "$(head -1 "$WORK/pm.csv" | tr -d '\r')" = \
+    "number,id,createdAt,provider,externalId,status,state,purpose,amount,userId,invoiceId,account,targetType,targetId,providerTime,performedAt,cancelledAt,reason" ] \
+    || fail "export header: $(head -1 "$WORK/pm.csv")"
+  [ "$(wc -l <"$WORK/pm.csv" | tr -d ' ')" = "3" ] || fail "export rows: $(cat "$WORK/pm.csv")"
+  grep -q ",click,$click_id,paid,1,topup,300000,$user," "$WORK/pm.csv" || fail "export Click row: $(cat "$WORK/pm.csv")"
+  PM_STATUS=$(curl -s -G -o "$WORK/pm.csv" -w '%{http_code}' "$base/admin/payments/export" --data-urlencode "from=$since" \
+    --data-urlencode 'filters={"provider":{"value":"payme","matchMode":"equals"}}' -H "authorization: Bearer $admin")
+  pm_expect 200 "export with list filters"
+  [ "$(wc -l <"$WORK/pm.csv" | tr -d ' ')" = "2" ] && grep -q ",payme,$payme_id,cancelled,-2," "$WORK/pm.csv" \
+    || fail "export filtered: $(cat "$WORK/pm.csv")"
+  PM_STATUS=$(curl -s -G -o "$WORK/pm.txt" -w '%{http_code}' "$base/admin/payments/export" \
+    --data-urlencode 'filters={"nope":{"value":"x"}}' -H "authorization: Bearer $admin")
+  pm_expect 400 "export with an unknown filter field"
+
+  # ── admin: wallet reversals (balance 0 now) ───────────────────────────
+  pm_call POST admin/wallets/adjust "$(pm_obj userId "$user" amount 100000 note 'e2e credit')" "$admin"
+  pm_expect 200 "adjust +100000"
+  credit=$(pm_json '.id' <"$WORK/pm.txt")
+  pm_call POST admin/wallets/adjust "$(pm_obj userId "$user" amount -100000 note 'e2e spend')" "$admin"
+  pm_expect 200 "adjust -100000"
+  pm_call POST "admin/wallets/transactions/$credit/reverse" '{"comment":"e2e undo credit"}' "$admin"
+  pm_expect 409 "reversing a credit that is spent"
+  [ "$(pm_json '.code' <"$WORK/pm.txt")" = "insufficient_funds" ] || fail "reverse without funds: $(cat "$WORK/pm.txt")"
+  row=$(pm_psql "SELECT wt.id FROM wallet_transactions wt JOIN wallets w ON w.id = wt.wallet_id WHERE w.user_id = '$user' AND wt.type = 'adjust' AND wt.note LIKE 'e2e parallel%' ORDER BY wt.created_at, wt.id LIMIT 1")
+  pm_call POST "admin/wallets/transactions/$row/reverse" '{}' "$admin"
+  pm_expect 400 "reverse without a comment"
+  pm_call POST "admin/wallets/transactions/$row/reverse" '{"comment":"e2e reverse"}' "$access"
+  pm_expect 401 "a user token on reverse"
+  pm_call POST "admin/wallets/transactions/$row/reverse" '{"comment":"e2e reverse"}' "$admin"
+  pm_expect 200 "reverse a debit"
+  [ "$(pm_x '`${x.type} ${x.amount} ${x.balanceAfter} ${x.reversalOfId}`')" = "reversal 100000 100000 $row" ] \
+    || fail "reversal row: $(cat "$WORK/pm.txt")"
+  pm_call POST "admin/wallets/transactions/$row/reverse" '{"comment":"e2e reverse again"}' "$admin"
+  pm_expect 409 "a second reversal"
+  [ "$(pm_json '.code' <"$WORK/pm.txt")" = "already_reversed" ] || fail "second reversal: $(cat "$WORK/pm.txt")"
+  body=$(pm_psql "SELECT wt.id FROM wallet_transactions wt JOIN wallets w ON w.id = wt.wallet_id WHERE w.user_id = '$user' AND wt.type = 'topup' LIMIT 1")
+  pm_call POST "admin/wallets/transactions/$body/reverse" '{"comment":"e2e top-up"}' "$admin"
+  pm_expect 409 "reversing a provider top-up"
+  [ "$(pm_json '.code' <"$WORK/pm.txt")" = "not_reversible" ] || fail "provider top-up reversal: $(cat "$WORK/pm.txt")"
+
+  # Ten parallel reversals of one debit: one succeeds, the balance is credited once.
+  row=$(pm_psql "SELECT wt.id FROM wallet_transactions wt JOIN wallets w ON w.id = wt.wallet_id WHERE w.user_id = '$user' AND wt.type = 'adjust' AND wt.note LIKE 'e2e parallel%' ORDER BY wt.created_at, wt.id LIMIT 1 OFFSET 1")
+  pids=()
+  : >"$WORK/pm-parallel.txt"
+  for i in $(seq 1 10); do
+    curl -s -o /dev/null -w '%{http_code}\n' -X POST "$base/admin/wallets/transactions/$row/reverse" -H 'content-type: application/json' \
+      -H "authorization: Bearer $admin" -d "{\"comment\":\"e2e parallel reverse $i\"}" >>"$WORK/pm-parallel.txt" &
+    pids+=($!)
+  done
+  wait "${pids[@]}"
+  ok=$(grep -c '^200$' "$WORK/pm-parallel.txt" || true)
+  status=$(grep -c '^409$' "$WORK/pm-parallel.txt" || true)
+  [ "$ok" = "1" ] && [ "$status" = "9" ] || { sort "$WORK/pm-parallel.txt" | uniq -c; fail "parallel reversals: $ok succeeded, expected 1"; }
+  [ "$(pm_psql "SELECT COUNT(*) FROM wallet_transactions WHERE reversal_of_id = '$row'")" = "1" ] || fail "reversal rows of one debit"
+  [ "$(pm_psql "SELECT balance FROM wallets WHERE user_id = '$user'")" = "200000" ] || fail "balance after reversals"
+  # The ledger still replays to the balance.
+  [ "$(pm_psql "SELECT SUM(wt.amount) FROM wallet_transactions wt JOIN wallets w ON w.id = wt.wallet_id WHERE w.user_id = '$user'")" = "200000" ] \
+    || fail "ledger sum after reversals"
 
   # ── the hand-written migrations match the entities ─────────────────────
   body=$(npm run --silent typeorm -- migration:generate libs/database/src/migrations/E2eCheck -d libs/database/src/data-source.ts --dryrun 2>&1 || true)

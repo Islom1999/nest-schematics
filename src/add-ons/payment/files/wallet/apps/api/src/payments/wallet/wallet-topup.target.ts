@@ -1,6 +1,6 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
-import { PaymentTransaction, User, WalletTransactionType } from '@app/database';
+import { PaymentTransaction, User, WalletTransaction, WalletTransactionType } from '@app/database';
 import { PaymentCancelRefusedError, PaymentTarget, PaymentTargetInfo, PaymentTargetRegistry, WALLET_TARGET } from '../payment-target';
 import { InsufficientFundsException, WalletService } from './wallet.service';
 
@@ -37,8 +37,17 @@ export class WalletTopupTarget implements PaymentTarget, OnModuleInit {
   }
 
   async onCancelled(userId: string, tx: PaymentTransaction, manager: EntityManager): Promise<void> {
+    // Links the reversal to the top-up row: the unique reversal_of_id index then refuses a second one.
+    const topup = await manager.findOne(WalletTransaction, {
+      where: { paymentTransactionId: tx.id, type: WalletTransactionType.TOPUP },
+    });
     try {
-      await this.wallet.debit(userId, tx.amount, { type: WalletTransactionType.REVERSAL, paymentTransactionId: tx.id }, manager);
+      await this.wallet.debit(
+        userId,
+        tx.amount,
+        { type: WalletTransactionType.REVERSAL, paymentTransactionId: tx.id, reversalOfId: topup?.id ?? null },
+        manager,
+      );
     } catch (error) {
       if (error instanceof InsufficientFundsException) {
         throw new PaymentCancelRefusedError('The top-up is already spent');

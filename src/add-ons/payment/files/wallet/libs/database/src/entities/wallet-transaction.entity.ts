@@ -9,7 +9,8 @@ import { Wallet } from './wallet.entity';
  * - `topup`: a paid provider payment (credit);
  * - `purchase`: the user bought something from the balance (debit);
  * - `refund`: a purchase returned to the balance (credit);
- * - `reversal`: the provider cancelled a paid top-up (debit);
+ * - `reversal`: undoes one earlier row (`reversalOfId`): the provider
+ *   cancelled a paid top-up (debit), or an admin reversed a row (either sign);
  * - `adjust`: an admin correction with a note (either sign).
  */
 export enum WalletTransactionType {
@@ -29,6 +30,7 @@ export enum WalletTransactionType {
 @Entity('wallet_transactions')
 @Index('IDX_wallet_transactions_wallet_id_created_at', ['walletId', 'createdAt'])
 @Index('IDX_wallet_transactions_payment_transaction_id', ['paymentTransactionId'])
+@Index('UQ_wallet_transactions_reversal_of_id', ['reversalOfId'], { unique: true })
 export class WalletTransaction extends BaseEntity {
   @ApiProperty({ format: 'uuid' })
   @Column({ type: 'uuid' })
@@ -61,6 +63,15 @@ export class WalletTransaction extends BaseEntity {
   @ApiPropertyOptional({ type: String, nullable: true, description: 'Reason of an admin adjustment' })
   @Column({ type: 'varchar', length: 255, nullable: true })
   note: string | null;
+
+  /** Unique: a row is reversed at most once (the database refuses a second reversal). */
+  @ApiPropertyOptional({ type: String, format: 'uuid', nullable: true, description: 'Ledger row this reversal undoes' })
+  @Column({ type: 'uuid', nullable: true })
+  reversalOfId: string | null;
+
+  @ManyToOne(() => WalletTransaction, { onDelete: 'RESTRICT' })
+  @JoinColumn({ name: 'reversal_of_id', foreignKeyConstraintName: 'FK_wallet_transactions_reversal_of_id' })
+  reversalOf?: WalletTransaction;
 
   @ApiProperty({ type: Number, description: 'Balance after this change (tiyin)' })
   @Column({ type: 'bigint', transformer: tiyinTransformer })

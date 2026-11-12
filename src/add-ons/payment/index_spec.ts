@@ -97,6 +97,42 @@ describe('payment add-on', () => {
       expect(tree.readContent('/libs/common/src/config/env.validation.ts')).toContain('PAYME_KEY?:');
     });
 
+    it('admin routes: invoices, summary, CSV export and wallet reversal', () => {
+      expect(tree.exists(`${API}/admin/payments-report.ts`)).toBeTrue();
+      expect(tree.exists(`${API}/admin/payments-report.spec.ts`)).toBeTrue();
+      const payments = tree.readContent(`${API}/admin/admin-payments.controller.ts`);
+      const routes = [...payments.matchAll(/@(Get|Post)\('([^']+)'\)/g)].map((m) => `${m[1]} ${m[2]}`);
+      expect(routes).toEqual([
+        'Post pagination',
+        'Get summary',
+        'Get export',
+        'Post invoices/pagination',
+        'Get invoices/:id',
+        'Get :id', // after the fixed paths, or `summary` would hit ParseUUIDPipe
+        'Post :id/cancel',
+      ]);
+      expect(payments).toContain("@AdminResource('payments', { read: ['payment.read'], write: ['payment.write'] })");
+      expect(payments).toContain('new StreamableFile(');
+      const service = tree.readContent(`${API}/admin/admin-payments.service.ts`);
+      expect(service).toContain(".addGroupBy(`${this.alias}.provider`)");
+      expect(service).toContain('PAYMENT_EXPORT_MAX_ROWS');
+      expect(tree.readContent(`${API}/admin/payments-report.ts`)).toContain('/^[=+\\-@\\t\\r]/');
+
+      const wallets = tree.readContent(`${API}/wallet/admin-wallets.controller.ts`);
+      expect(wallets).toMatch(/@AdminAccess\('write'\)\s+@HttpCode\(HttpStatus\.OK\)\s+@Post\('transactions\/:id\/reverse'\)/);
+      const wallet = tree.readContent(`${API}/wallet/wallet.service.ts`);
+      expect(wallet).toContain('async reverse(');
+      expect(wallet).toContain("lock: { mode: 'pessimistic_write' }");
+      expect(tree.readContent(`${ENTITIES}/wallet-transaction.entity.ts`)).toContain(
+        "@Index('UQ_wallet_transactions_reversal_of_id', ['reversalOfId'], { unique: true })",
+      );
+      const [migration] = migrationFiles(tree, 'wallets');
+      const sql = tree.readContent(`${MIGRATIONS}/${migration}`);
+      expect(sql).toContain('"reversal_of_id" uuid,');
+      expect(sql).toContain('CREATE UNIQUE INDEX "UQ_wallet_transactions_reversal_of_id"');
+      expect(sql).toContain('DROP CONSTRAINT "FK_wallet_transactions_reversal_of_id"');
+    });
+
     it('webhooks are public, unthrottled, out of Swagger and not logged without api-logs', () => {
       const controller = tree.readContent(`${API}/payme/payme.controller.ts`);
       for (const d of ['@Public()', '@SkipThrottle()', '@ApiExcludeController()', "@Controller('payments/payme')"]) expect(controller).toContain(d);
