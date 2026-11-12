@@ -5,7 +5,7 @@ import { Queue } from 'bullmq';
 import { JobHandler } from './job-handler.decorator';
 import { JobsService } from './jobs.service';
 import { QueueModule } from './queue.module';
-import { backoffDelay, DEFAULT_JOB_OPTIONS, JobContext } from './queue.types';
+import { jobRetryDelay, DEFAULT_JOB_OPTIONS, JobContext } from './queue.types';
 
 jest.mock('bullmq', () => {
   const actual = jest.requireActual<typeof import('bullmq')>('bullmq');
@@ -37,7 +37,11 @@ jest.mock('bullmq', () => {
   return { ...actual, Queue, Worker };
 });
 
-type QueueStub = Queue & { add: jest.Mock; opts: unknown };
+interface QueueStub {
+  name: string;
+  add: jest.Mock;
+  opts: unknown;
+}
 const QueueStubs = Queue as unknown as { instances: QueueStub[] };
 
 const calls: { data: unknown; job: JobContext }[] = [];
@@ -81,8 +85,8 @@ describe('JobsService', () => {
 
   it('defaults to 3 attempts with exponential backoff', () => {
     expect(DEFAULT_JOB_OPTIONS).toMatchObject({ attempts: 3, backoff: { type: 'exponential', delay: 1000 } });
-    expect([1, 2, 3].map((n) => backoffDelay({ type: 'exponential', delay: 1000 }, n))).toEqual([1000, 2000, 4000]);
-    expect(backoffDelay({ type: 'fixed', delay: 500 }, 3)).toBe(500);
+    expect([1, 2, 3].map((n) => jobRetryDelay({ type: 'exponential', delay: 1000 }, n))).toEqual([1000, 2000, 4000]);
+    expect(jobRetryDelay({ type: 'fixed', delay: 500 }, 3)).toBe(500);
   });
 
   describe('without REDIS_URL (memory driver)', () => {

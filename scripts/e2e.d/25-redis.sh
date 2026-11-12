@@ -13,7 +13,7 @@ redis_smoke() {
   grep -q 'REDIS_URL is not set' "$WORK/api.log" || { tail -30 "$WORK/api.log"; fail "redis: no in-memory fallback warning in the API log."; }
   code=$(curl -s -o "$WORK/redis-health.json" -w '%{http_code}' "$base/health/ready")
   [ "$code" = "200" ] || { cat "$WORK/redis-health.json"; fail "GET health/ready returned $code, expected 200."; }
-  grep -q '"redis":{"status":"up","mode":"memory"}' "$WORK/redis-health.json" ||
+  node -e "const r=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8')).details?.redis;process.exit(r?.status==='up'&&r?.mode==='memory'?0:1)" "$WORK/redis-health.json" ||
     { cat "$WORK/redis-health.json"; fail "health/ready does not report redis in memory mode."; }
   log "redis OK"
 }

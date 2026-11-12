@@ -31,14 +31,14 @@ export class SettingsAdminService extends BaseCrudService<AppSetting, CreateSett
   protected override beforeCreate(dto: CreateSettingDto): DeepPartial<AppSetting> {
     assertSettingKey(dto.key);
     validateSettingValue(dto.key, dto.value);
-    return dto as DeepPartial<AppSetting>;
+    return dto;
   }
 
   protected override beforeUpdate(entity: AppSetting, dto: UpdateSettingDto): DeepPartial<AppSetting> {
     const key = dto.key ?? entity.key;
     assertSettingKey(key);
     validateSettingValue(key, dto.value !== undefined ? dto.value : entity.value);
-    return dto as DeepPartial<AppSetting>;
+    return dto;
   }
 
   override async create(dto: CreateSettingDto): Promise<unknown> {

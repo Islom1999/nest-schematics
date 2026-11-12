@@ -57,7 +57,7 @@ export interface QueueModuleOptions {
 }
 
 /** Delay before retry number `attempt` (1-based) for BullMQ-style backoff options. */
-export function backoffDelay(backoff: number | BackoffOptions | undefined, attempt: number): number {
+export function jobRetryDelay(backoff: number | BackoffOptions | undefined, attempt: number): number {
   if (backoff === undefined) return 0;
   if (typeof backoff === 'number') return backoff;
   const delay = backoff.delay ?? 0;

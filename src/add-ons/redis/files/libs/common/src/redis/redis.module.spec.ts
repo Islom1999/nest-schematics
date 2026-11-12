@@ -13,9 +13,14 @@ import { RedisModule } from './redis.module';
 /** No Redis server is needed: the client is replaced or never connects (lazyConnect). */
 async function compile(env: Record<string, string>, client?: unknown) {
   let builder = Test.createTestingModule({
-    imports: [ConfigModule.forRoot({ ignoreEnvFile: true, load: [() => env] }), CacheStoreModule, RedisModule],
+    imports: [ConfigModule.forRoot({ isGlobal: true, ignoreEnvFile: true, load: [() => env] }), CacheStoreModule, RedisModule],
   });
   if (client !== undefined) builder = builder.overrideProvider(REDIS_CLIENT).useValue(client);
+  // The throttler storage opens its own (real) connection for anything that is
+  // not an ioredis instance, e.g. a mock: keep it out of mock-based tests.
+  if (client !== undefined && !(client instanceof Redis)) {
+    builder = builder.overrideProvider(SHARED_THROTTLER_STORAGE).useValue(null);
+  }
   return builder.compile();
 }
 

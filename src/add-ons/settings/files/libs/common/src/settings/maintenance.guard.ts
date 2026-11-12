@@ -11,11 +11,12 @@ export const SkipMaintenance = () => SetMetadata(SKIP_MAINTENANCE_KEY, true);
 
 /**
  * Route prefixes (after `/api`) that keep working during maintenance: the
- * admin panel and its sign-in, health probes and the public settings (so
- * apps can read the message). Swagger docs are not Nest routes and are never
+ * admin panel and its sign-in, health probes, the public settings (so apps
+ * can read the message) and server-to-server hooks (`internal/*`, e.g. tusd).
+ * Swagger docs are not Nest routes and are never
  * blocked. Add a prefix here or use `@SkipMaintenance()` for more.
  */
-export const MAINTENANCE_EXEMPT_PREFIXES = ['admin', 'auth', 'health', 'settings/public'];
+export const MAINTENANCE_EXEMPT_PREFIXES = ['admin', 'auth', 'health', 'settings/public', 'internal'];
 
 function routePath(...parts: unknown[]): string {
   return parts

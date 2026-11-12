@@ -45,6 +45,21 @@ Register it in `src/collection.json` (`"factory": "./add-ons/<name>/index#<camel
      class above `// @ns:worker-jobs` in WorkerModule; otherwise print a hint and add an entry to
      `DEFERRED_JOBS` in `src/add-ons/worker/index.ts`, so installing the worker later registers it
      (example: `src/add-ons/api-logs/cleanup.ts`).
+   - change an import that is already there (`X.forRoot()` → `X.forRoot({ ... })`):
+     `setModuleImport(tree, modulePath, 'X', 'X.forRoot({ ... })')`;
+   - health checks: `insertAtMarker` at `MARKERS.healthInject` (constructor parameter),
+     `MARKERS.healthCheck` (`/api/health`) and `MARKERS.healthReady` (`/api/health/ready`)
+     in `apps/api/src/health/health.controller.ts`; env of the api container in
+     docker-compose: `MARKERS.composeApiEnvironment`;
+   - caches and counters that must be shared between instances: inject `CACHE_STORE`
+     (`CacheStore` from `@app/common`), never a module-level `Map`/`TtlCache`. It is in
+     memory by default and Redis once the `redis` add-on is installed, in either order;
+     `LoginAttemptLimiter(max, windowMs, cache.shared ? cache : undefined, '<prefix>')`
+     counts there too (its methods are async: await them);
+   - background jobs: with `hasFeature(tree, 'queue')`, put `@JobHandler('name')` methods in a
+     module and call `registerJobHandlers(tree, 'XJobsModule', '@app/common')`
+     (`src/add-ons/queue/wiring.ts`); they run in apps/worker when it exists (in either
+     install order), otherwise in the api. Enqueue with `JobsService.enqueue(name, data, opts)`.
    If you need a new kind of edit, add a helper to `src/utils/ops` with a unit test in
    `ops_spec.ts` rather than string-replacing in your add-on.
 5. **Re-running changes nothing.** The e2e runs every step twice and fails on any diff.

@@ -9,7 +9,7 @@ import { RedisCacheStore } from './redis-cache-store';
  * talking to one Redis.
  */
 function client(): Redis {
-  return new RedisMock({ host: 'cache-spec', port: 6379 }) as unknown as Redis;
+  return new RedisMock({ host: 'cache-spec', port: 6379 });
 }
 
 describe('RedisCacheStore', () => {

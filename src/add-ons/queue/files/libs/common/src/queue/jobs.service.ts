@@ -5,7 +5,7 @@ import { Job, Queue, UnrecoverableError, Worker } from 'bullmq';
 import type { RedisOptions } from 'ioredis';
 import { randomUUID } from 'node:crypto';
 import {
-  backoffDelay,
+  jobRetryDelay,
   DEFAULT_JOB_OPTIONS,
   DEFAULT_QUEUE,
   EnqueuedJob,
@@ -211,7 +211,7 @@ export class JobsService implements OnApplicationShutdown {
     } catch (error) {
       const message = (error as Error).message;
       if (handler && job.attempt < job.attempts) {
-        const delay = backoffDelay(job.backoff, job.attempt);
+        const delay = jobRetryDelay(job.backoff, job.attempt);
         this.logger.warn(`${job.queue}/${job.name} #${job.id} attempt ${job.attempt} failed: ${message}; retry in ${delay}ms`);
         job.attempt += 1;
         this.count(job.queue, 'delayed', 1);
