@@ -1,0 +1,43 @@
+import { MigrationInterface, QueryRunner } from 'typeorm';
+
+/** `server_api_logs` (npm run g -- api-logs). Matches entities/server-api-log.entity.ts. */
+export class ServerApiLogs<%= timestamp %> implements MigrationInterface {
+  name = 'ServerApiLogs<%= timestamp %>';
+
+  public async up(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query(`
+      CREATE TABLE IF NOT EXISTS "server_api_logs" (
+        "id" uuid NOT NULL DEFAULT gen_random_uuid(),
+        "created_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+        "updated_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+        "deleted_at" TIMESTAMP WITH TIME ZONE,
+        "type" character varying(16) NOT NULL DEFAULT 'API',
+        "module" character varying(128),
+        "handler" character varying(128),
+        "method" character varying(10),
+        "url" text,
+        "status_code" integer,
+        "request_body" jsonb,
+        "response_body" jsonb,
+        "error" text,
+        "duration_ms" integer,
+        "user_id" character varying(64),
+        "user_type" character varying(32),
+        "ip" character varying(64),
+        "request_id" character varying(64),
+        "server_id" character varying(128),
+        CONSTRAINT "<%= primaryKey %>" PRIMARY KEY ("id")
+      )
+    `);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "<%= deletedAtIndex %>" ON "server_api_logs" ("deleted_at")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_server_api_logs_created_at" ON "server_api_logs" ("created_at")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_server_api_logs_type" ON "server_api_logs" ("type")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_server_api_logs_status_code" ON "server_api_logs" ("status_code")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_server_api_logs_user_id" ON "server_api_logs" ("user_id")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_server_api_logs_request_id" ON "server_api_logs" ("request_id")`);
+  }
+
+  public async down(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query(`DROP TABLE IF EXISTS "server_api_logs"`);
+  }
+}

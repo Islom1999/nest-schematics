@@ -209,6 +209,31 @@ Auth:
 
 See [docs/patterns.md](docs/patterns.md) for the full contract (the TableQueryDTO format, matchModes, the error format) and where each pattern came from.
 
+## Swagger va OpenAPI klientlar
+
+Two OpenAPI documents, split by route prefix in `apps/api/src/config/swagger.ts` (the longest matching prefix wins):
+
+| Hujjat | Yo'llar | UI | JSON | Eksport |
+|---|---|---|---|---|
+| `admin` | `/api/admin/*`, `/api/auth/*` | `/docs/admin` | `/docs/admin-json` | `openapi/admin.json` |
+| `client` | everything else | `/docs/client` | `/docs/client-json` | `openapi/client.json` |
+
+- `/docs` shows both documents with a picker. Docs are on outside production. In production they need `SWAGGER_ENABLED=true` plus `SWAGGER_USER` and `SWAGGER_PASSWORD` (basic auth); without the credentials they stay off.
+- `operationId` = `<controller><Method>`: `productFindAll`, `productFindAllPagination`, `authSignIn`. Duplicates fail the build of the documents.
+- Pages are typed: `@ApiPaginatedResponse(Product)` gives a `PaginatedProduct` schema (`{ count, data: Product[] }`). Enums are named: `@ApiProperty({ ...apiEnum(ProductStatus, 'ProductStatus') })`.
+- `npm run swagger:export` writes `openapi/*.json` **without a database** (`SWAGGER_EXPORT=1`: TypeORM does not connect and lifecycle hooks do not run). Keys are sorted, so the files diff cleanly; commit them.
+
+Frontend clients ([openapi-generator](https://openapi-generator.tech), needs Java 11+ or `"useDocker": true` in `openapitools.json`):
+
+```bash
+npm run g -- openapi-client --name admin --doc admin --generator typescript-angular --target ../shop-admin/src/app/core/api
+npm run g -- openapi-client --name mobile --doc client --generator dart-dio --target ../shop_mobile/packages/api
+npm run api:generate:admin   # export + one client
+npm run api:generate         # export + every client
+```
+
+The add-on pins the generator version in `openapitools.json`, adds `@openapitools/openapi-generator-cli`, and uses these settings: `typescript-angular` gets `ngVersion 20`, `providedIn: root`, `stringEnums`, `withInterfaces`; `dart-dio` gets `pubName`; `typescript-fetch` is also supported. Re-running it with the same name changes nothing.
+
 ## Rivojlantirish
 
 ```bash

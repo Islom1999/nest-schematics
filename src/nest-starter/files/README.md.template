@@ -1,17 +1,21 @@
 # <%= classify(name) %>
 
-NestJS 11 + TypeORM (PostgreSQL) monorepo (<%= apps.join(', ') %>). Generated with [fuse-nest-schematics](https://www.npmjs.com/package/fuse-nest-schematics). The frontend is [fuse-schematics](https://www.npmjs.com/package/fuse-schematics) (Fuse Admin, Angular).
+NestJS 11 + TypeORM (PostgreSQL) monorepo (<%= apps.join(', ') %>). Generated with [nest-schematics](https://www.npmjs.com/package/nest-schematics). The frontend is [fuse-schematics](https://www.npmjs.com/package/fuse-schematics) (Fuse Admin, Angular).
 
 ## Ishga tushirish
 
 ```bash
-cp .env.example .env      # DB_* va ADMIN_* qiymatlarini to'ldiring
+cp .env.example .env            # DB_* va ADMIN_* qiymatlarini to'ldiring
+docker compose up -d postgres   # yoki o'zingizning PostgreSQL
 npm install
-npm run start:dev         # = start:dev:api
+npm run start:dev               # = start:dev:api; kutilayotgan migratsiyalar avval ishlaydi
+npm run seed                    # boshlang'ich ma'lumotlar (ixtiyoriy)
 ```
 
 - API: `http://localhost:3000/api`
-- Swagger: `http://localhost:3000/docs` (`SWAGGER_ENABLED=false` bilan o'chadi)
+- Health: `http://localhost:3000/api/health` (`/live`, `/ready`)
+- Swagger: `http://localhost:3000/docs` (`/docs/admin`, `/docs/client`; `SWAGGER_ENABLED=false` bilan o'chadi, prod'da `SWAGGER_USER`/`SWAGGER_PASSWORD` shart)
+- OpenAPI: `npm run swagger:export` → `openapi/admin.json`, `openapi/client.json` (DB kerak emas); klient: `npm run g -- openapi-client --name admin --target ../admin/src/app/core/api`
 - Kirish: `POST /api/auth/sign-in` `{ email, password }` → `{ accessToken, user }`
 
 ## Ilovalar va skriptlar
@@ -21,14 +25,28 @@ npm run start:dev         # = start:dev:api
 <% for (const app of apps) { %>| `apps/<%= app %>` | <%= app === 'api' ? 'HTTP admin API' : app === 'bot' ? 'Telegram bot (telegraf, `BOT_TOKEN`)' : 'Cron/fon vazifalar (`@nestjs/schedule`)' %> | `npm run start:dev:<%= app %>` | `npm run build:<%= app %>` | `npm run start:prod:<%= app %>` |
 <% } %>
 `npm run build` builds every app into `dist/apps/<app>/main.js` (webpack).
+More apps: `npm run g -- worker` (cron, `@nestjs/schedule`) and `npm run g -- bot` (Telegram, telegraf).
+
+| Skript | Vazifa |
+|---|---|
+| `npm run g -- <generator> ...` | kod generatorlari (`crud`, `seed`, add-on'lar) |
+| `npm run lint` / `npm run lint:fix` | ESLint (typescript-eslint, type-aware) |
+| `npm run format` | Prettier (`.prettierrc`) |
+| `npm test` | unit testlar (`*.spec.ts`, DB kerak emas) |
+| `npm run test:e2e` | e2e testlar (`test/*.e2e-spec.ts`, `.env` dagi DB bilan) |
+| `npm run migration:generate -- <nom>` | entity'lar va DB farqidan migratsiya |
+| `npm run migration:create -- <nom>` | bo'sh migratsiya |
+| `npm run migration:run` / `migration:revert` / `migration:show` | migratsiyalarni qo'llash, bittasini qaytarish, holatini ko'rish |
+| `npm run seed` / `npm run seed -- <nom>` | hamma seed'lar yoki faqat bittasi |
 
 ## Tuzilma
 
 ```
 apps/
 ├── api/src/
-│   ├── main.ts                 # prefix /api, ValidationPipe, CORS, helmet, Swagger
-│   ├── api.module.ts           # Config + Database + Auth + CRUD modullar
+│   ├── main.ts                 # prefix /api, ValidationPipe, CORS, helmet, compression, shutdown hooks, Swagger
+│   ├── api.module.ts           # Config + Throttler + Database + Health + Auth + CRUD modullar
+│   ├── health/                 # /api/health (DB ping, heap), /live, /ready
 │   ├── auth/                   # JWT sign-in, AdminGuard, @AdminResource
 │   └── modules/                # generatsiya qilingan CRUD modullar<% if (apps.includes('bot')) { %>
 ├── bot/src/                    # telegraf bot (DatabaseModule bilan)<% } %><% if (apps.includes('worker')) { %>
@@ -37,29 +55,27 @@ libs/
 ├── database/src/               # @app/database
 │   ├── base.entity.ts          # uuid id, createdAt, updatedAt, deletedAt (soft delete)
 │   ├── entities/               # barcha entity'lar + index.ts barrel
-│   ├── database.module.ts      # TypeORM (autoLoadEntities, SnakeNamingStrategy)
-│   └── data-source.ts          # migratsiya CLI uchun
+│   ├── migrations/             # migratsiyalar + index.ts (ishga tushish tartibi)
+│   ├── seeds/                  # seed'lar + index.ts (ro'yxat), seeder.ts (interfeys)
+│   ├── database.module.ts      # TypeORM (autoLoadEntities, SnakeNamingStrategy, migratsiyalar)
+│   ├── data-source.ts          # migratsiya CLI va seed uchun
+│   └── seed.ts                 # `npm run seed`
 └── common/src/                 # @app/common
     ├── base/                   # BaseCrudService, BaseCrudController
+    ├── config/                 # env tekshiruvi, rate limit sozlamasi
     ├── dto/table-query.dto.ts  # PrimeNG TableQueryDTO + { count, data }
     ├── query/table-query.ts    # xavfsiz filter/sort/qidiruv
-    ├── decorators/             # @AdminAccess, @Public, @RequirePermissions
+    ├── decorators/             # @AdminAccess, @Public, @RequirePermissions, @AuthThrottle
     └── filters/                # yagona xato formati (PG xatolari → 400/409)
+test/                           # e2e testlar (supertest)
+tools/migration.js              # migration:generate/create yordamchisi
+Dockerfile, docker-compose.yml  # api image (multi-stage) va lokal stack
 ```
 
 ## CRUD modul qo'shish
 
-`--fields` bilan (Nest CLI noma'lum flaglarni qabul qilmaydi, shuning uchun schematics-cli orqali):
-
 ```bash
-npx -p @angular-devkit/schematics-cli schematics fuse-nest-schematics:crud product \
-  --fields "name:string,price:number,active:boolean,note:text?,status:enum(draft|published)"
-```
-
-Faqat `name:string` maydoni bilan Nest CLI orqali ham bo'ladi (monorepoda `-p api` shart):
-
-```bash
-nest g -c fuse-nest-schematics crud product -p api
+npm run g -- crud product --fields "name:string,price:number,active:boolean,note:text?,status:enum(draft|published)"
 ```
 
 Natija:
@@ -84,9 +100,48 @@ Endpointlar `admin/product` ostida va Angular `BaseCrudService` bilan bir xil:
 
 ## Migratsiyalar
 
-`DB_SYNCHRONIZE=true` faqat lokalda. Productionda `DB_SYNCHRONIZE=false` qiling va migratsiyadan foydalaning (build shart emas, ts-node bilan ishlaydi):
+Sxema faqat migratsiyalar orqali o'zgaradi: `DB_SYNCHRONIZE=false` (productionda `true` qiymati qabul qilinmaydi). Migratsiyalar `libs/database/src/migrations/index.ts` dagi ro'yxatdan olinadi; ilova ishga tushganda kutilayotganlari avtomatik qo'llanadi (`DB_MIGRATIONS_RUN=true`, bir nechta instansiya bo'lsa ham advisory lock bilan bir marta).
 
 ```bash
-npm run migration:generate --name=Init
-npm run migration:run
+npm run migration:generate -- add-product      # entity'ni o'zgartirgandan keyin
+npm run migration:run                            # yoki shunchaki api'ni ishga tushiring
+npm run migration:revert                         # oxirgisini qaytarish
+npm run migration:show                           # qaysilari qo'llangan
 ```
+
+`migration:generate` va `migration:create` yangi klassni `migrations/index.ts` ga o'zi qo'shadi. `--name=add-product` ko'rinishi ham ishlaydi (npm 11 ogohlantirish beradi).
+
+## Seed'lar
+
+Seed — boshlang'ich yoki demo ma'lumot. Har bir seed **idempotent** bo'lishi kerak (qayta ishga tushirilsa, takrorlanmaydi).
+
+```bash
+npm run g -- seed categories            # libs/database/src/seeds/categories.seed.ts + ro'yxatga qo'shish
+npm run g -- seed demo-products --dev-only
+npm run seed                            # hammasi (ro'yxat tartibida)
+npm run seed -- categories              # faqat bittasi
+```
+
+`devOnly: true` seed'lar `NODE_ENV=production` bo'lganda o'tkazib yuboriladi.
+
+## Health va rate limit
+
+- `GET /api/health`: DB ping va heap (512 MB); `GET /api/health/live`: jarayon tirikligi (DB'siz); `GET /api/health/ready`: DB ulanishi. Hammasi `@Public()`, rate limit'siz; muammo bo'lsa 503.
+- Global limit: har bir IP uchun `THROTTLE_LIMIT` so'rov / `THROTTLE_TTL` soniya (100/min).
+- Kirish route'lari `@AuthThrottle()` bilan: daqiqasiga `AUTH_THROTTLE_LIMIT` (5) so'rov. Webhook'lar uchun `@SkipThrottle()`.
+- IP `X-Forwarded-For` dan faqat `TRUST_PROXY` (masalan `1`, nginx ortida) berilganda olinadi.
+
+## Docker
+
+```bash
+docker compose up -d postgres     # faqat DB (lokal ishlab chiqish)
+docker compose up --build         # DB + api (production image)
+```
+
+`Dockerfile` multi-stage: dependency'lar, `npm run build:api`, keyin faqat production `node_modules` va `dist/apps/api` bilan `node` foydalanuvchisi ostida ishlaydi. Add-on'lar (`redis`, `tusd`, ...) `docker-compose.yml` ga o'z servislarini qo'shadi.
+
+## Testlar va kod sifati
+
+- `npm test`: unit testlar (`apps/**` va `libs/**` dagi `*.spec.ts`), masalan `libs/common/src/config/env.validation.spec.ts`.
+- `npm run test:e2e`: `test/health.e2e-spec.ts` butun api'ni `.env` dagi DB bilan ishga tushiradi va supertest bilan tekshiradi.
+- `npm run lint`: ESLint flat config (`eslint.config.mjs`); formatlash qoidalari Prettier'da (`npm run format`).

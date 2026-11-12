@@ -180,7 +180,7 @@ describe('starter tree helper', () => {
     const { getProject } = await import('./project');
     const tree = await createStarterTree();
     const project = getProject(tree);
-    expect(project.apps).toEqual(['api', 'bot', 'worker']);
+    expect(project.apps).toEqual(['api']);
     expect(tree.exists(project.apiModule)).toBeTrue();
   });
 });

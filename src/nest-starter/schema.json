@@ -19,8 +19,8 @@
     },
     "apps": {
       "type": "string",
-      "description": "Comma-separated apps to create: api (always), bot (telegraf), worker (@nestjs/schedule)",
-      "default": "api,bot,worker"
+      "description": "Comma-separated apps: api (always); bot (telegraf) and worker (@nestjs/schedule) run those add-ons",
+      "default": "api"
     },
     "skipInstall": {
       "type": "boolean",

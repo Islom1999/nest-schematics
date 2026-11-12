@@ -1,0 +1,35 @@
+{
+  "$schema": "http://json-schema.org/schema",
+  "$id": "ApiLogsAddonSchema",
+  "title": "API logs (server_api_logs)",
+  "type": "object",
+  "properties": {
+    "mode": {
+      "type": "string",
+      "enum": ["errors", "slow", "all"],
+      "description": "Initial API_LOG_MODE: errors (failures only), slow (failures and slow requests) or all",
+      "default": "errors"
+    },
+    "retentionDays": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Initial API_LOG_RETENTION_DAYS (0 = keep forever)",
+      "default": 30
+    },
+    "force": {
+      "type": "boolean",
+      "description": "Overwrite generated files that you have edited",
+      "default": false
+    },
+    "skipInstall": {
+      "type": "boolean",
+      "description": "Do not run npm install",
+      "default": false
+    },
+    "root": {
+      "type": "string",
+      "description": "Project directory relative to the current directory (used by `new --apps`)",
+      "default": ""
+    }
+  }
+}

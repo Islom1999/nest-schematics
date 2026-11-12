@@ -1,13 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { Brackets, ObjectLiteral, SelectQueryBuilder, WhereExpressionBuilder } from 'typeorm';
 import { ColumnMetadata } from 'typeorm/metadata/ColumnMetadata';
-import {
-  MATCH_MODES,
-  MatchMode,
-  PaginatedResult,
-  TableFilterRule,
-  TableQueryDto,
-} from '../dto/table-query.dto';
+import { MATCH_MODES, MatchMode, PaginatedResult, TableFilterRule, TableQueryDto } from '../dto/table-query.dto';
 
 /** Filter that is not a plain column (e.g. `status: 'expired'` computed from dates). */
 export type CustomFilter = (qb: WhereExpressionBuilder, rule: TableFilterRule, param: string) => void;

@@ -1,8 +1,13 @@
 import 'dotenv/config';
 import { DataSource } from 'typeorm';
+import { migrations } from './migrations';
 import { SnakeNamingStrategy } from './snake-naming.strategy';
 
-/** TypeORM CLI data source (`npm run migration:generate --name=Init`), run with ts-node from the repo root. */
+/**
+ * Data source for the TypeORM CLI (`npm run migration:*`) and `npm run seed`,
+ * run with ts-node from the repo root. Migrations come from the same explicit
+ * list the apps use (`migrations/index.ts`).
+ */
 export default new DataSource({
   type: 'postgres',
   host: process.env.DB_HOST ?? 'localhost',
@@ -12,5 +17,5 @@ export default new DataSource({
   database: process.env.DB_DATABASE,
   namingStrategy: new SnakeNamingStrategy(),
   entities: [__dirname + '/entities/*.entity{.ts,.js}'],
-  migrations: [__dirname + '/migrations/*{.ts,.js}'],
+  migrations,
 });
