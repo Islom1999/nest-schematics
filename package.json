@@ -1,9 +1,12 @@
 {
-  "name": "fuse-nest-schematics",
+  "name": "nest-schematics",
   "version": "0.1.0",
-  "description": "NestJS + TypeORM admin API loyihalari va fuse-schematics (Angular) bilan mos CRUD modullarini generatsiya qiluvchi schematics to'plami",
+  "description": "NestJS + TypeORM monorepo starter and lego-style generators (CRUD, auth, upload, payments, notifications, AI, logs), compatible with fuse-schematics (Angular)",
   "main": "src/collection.json",
   "schematics": "./src/collection.json",
+  "bin": {
+    "nest-schematics": "bin/nest-schematics.js"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "npm run build && jasmine \"src/**/*_spec.js\"",
@@ -22,10 +25,10 @@
     "code-generator",
     "scaffolding",
     "admin-api",
-    "fuse",
-    "fuse-admin",
     "primeng",
-    "swagger"
+    "swagger",
+    "fuse-schematics",
+    "generator-cli"
   ],
   "author": {
     "name": "Islom Karimov",
@@ -55,11 +58,25 @@
     "jasmine": "^5.0.0"
   },
   "files": [
+    "bin",
     "src",
     "!src/**/*_spec.*",
     "!src/**/*.js.map",
+    "!src/utils/ops/testing",
+    "!src/testing",
     "README.md",
     "LICENSE",
     "CHANGELOG.md"
-  ]
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Islom1999/nest-schematics.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Islom1999/nest-schematics/issues"
+  },
+  "homepage": "https://github.com/Islom1999/nest-schematics#readme",
+  "publishConfig": {
+    "access": "public"
+  }
 }

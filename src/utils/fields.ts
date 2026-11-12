@@ -1,5 +1,5 @@
 /**
- * `--fields` spec parser. Shared syntax for the backend (fuse-nest-schematics)
+ * `--fields` spec parser. Shared syntax for the backend (nest-schematics)
  * and the frontend (fuse-schematics), so it has no Nest/Angular dependencies.
  *
  *   "title:string,price:number,active:boolean,note:text?,status:enum(draft|published)"

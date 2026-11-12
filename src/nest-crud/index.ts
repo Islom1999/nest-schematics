@@ -1,5 +1,4 @@
 import {
-  MergeStrategy,
   Rule,
   SchematicContext,
   SchematicsException,
@@ -7,40 +6,21 @@ import {
   apply,
   applyTemplates,
   chain,
-  mergeWith,
   move,
   noop,
   url,
 } from '@angular-devkit/schematics';
 import { dirname, join, normalize, strings } from '@angular-devkit/core';
-import { posix } from 'path';
 import { FieldSpecError, parseFields } from '../utils/fields';
-import { addModuleImport } from '../utils/module-import';
+import { addBarrelExport, addModuleImport, importPath, mergeSafe, recordFeature } from '../utils/ops';
 import { renderFields } from './render';
 import { Schema } from './schema';
 
 const DEFAULT_FIELDS = 'name:string';
 
-/** Relative import specifier from directory `from` to path `to` (always starts with `.`). */
-function importPath(from: string, to: string): string {
-  const rel = posix.relative(`/${normalize(from)}`, `/${normalize(to)}`);
-  return rel.startsWith('.') ? rel : `./${rel}`;
-}
-
 /** `apps/<app>/src` passed by the Nest CLI (`nest g -c ... -p bot`) → `bot`. */
 function appFromSourceRoot(sourceRoot: string | undefined): string | undefined {
   return sourceRoot ? /(?:^|\/)apps\/([^/]+)\/src\/?$/.exec(sourceRoot)?.[1] : undefined;
-}
-
-/** Appends `export * from './<file>';` to a barrel once. */
-function addBarrelExport(tree: Tree, barrel: string, file: string): boolean {
-  const line = `export * from './${file}';`;
-  const current = tree.exists(barrel) ? tree.read(barrel)!.toString('utf-8') : '';
-  if (current.split('\n').some((l) => l.trim() === line)) return false;
-  const next = `${current}${current && !current.endsWith('\n') ? '\n' : ''}${line}\n`;
-  if (tree.exists(barrel)) tree.overwrite(barrel, next);
-  else tree.create(barrel, next);
-  return true;
 }
 
 export function nestCrud(options: Schema): Rule {
@@ -76,7 +56,7 @@ export function nestCrud(options: Schema): Rule {
     if (!tree.exists(`${dbLib}/base.entity.ts`)) {
       context.logger.warn(
         `${dbLib}/base.entity.ts not found. The generated code expects the monorepo from ` +
-          `"fuse-nest-schematics:starter" (libs/database, libs/common, @app/* paths).`,
+          `"npx nest-schematics new" (libs/database, libs/common, @app/* paths).`,
       );
     }
     if (!tree.exists(`${authDir}/index.ts`)) {
@@ -135,11 +115,17 @@ export function nestCrud(options: Schema): Rule {
       return host;
     };
 
+    const record: Rule = (host: Tree) => {
+      recordFeature(host, 'crud', {}, name);
+      return host;
+    };
+
     return chain([
-      mergeWith(entitySource, MergeStrategy.Overwrite),
-      mergeWith(featureSource, MergeStrategy.Overwrite),
+      mergeSafe(entitySource, options.force),
+      mergeSafe(featureSource, options.force),
       exportEntity,
       options.skipImport ? noop() : registerModule,
+      record,
     ])(tree, context);
   };
 }

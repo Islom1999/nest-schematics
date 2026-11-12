@@ -13,6 +13,8 @@ export interface Schema {
   dbLib?: string;
   /** Do not register the module in the app module. */
   skipImport?: boolean;
+  /** Overwrite generated files that differ from the template. */
+  force?: boolean;
   /** Passed by the Nest CLI (apps/<app>/src). */
   sourceRoot?: string;
   language?: string;

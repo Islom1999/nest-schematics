@@ -1,0 +1,8 @@
+{
+  "version": "<%= version %>",
+  "features": {<% for (const [i, app] of apps.filter((a) => a !== 'api').entries()) { %>
+    "<%= app %>": {
+      "version": "<%= version %>"
+    }<%= i < apps.length - 2 ? ',' : '' %><% } %><% if (apps.length > 1) { %>
+  <% } %>}
+}

@@ -6,13 +6,25 @@ import { parseApps } from './index';
 const collectionPath = path.join(__dirname, '../collection.json');
 
 describe('nest-starter', () => {
-  const runner = new SchematicTestRunner('fuse-nest-schematics', collectionPath);
+  const runner = new SchematicTestRunner('nest-schematics', collectionPath);
 
   describe('default (api, bot, worker)', () => {
     let tree: UnitTestTree;
 
     beforeAll(async () => {
       tree = await runner.runSchematic('nest-starter', { name: 'ShopApi', skipInstall: true });
+    });
+
+    it('writes the add-on manifest, markers and the "g" script', () => {
+      const manifest = JSON.parse(tree.readContent('/shop-api/nest-schematics.json'));
+      expect(Object.keys(manifest.features)).toEqual(['bot', 'worker']);
+      expect(manifest.version).toMatch(/^\d+\.\d+\.\d+/);
+      expect(tree.readContent('/shop-api/apps/api/src/main.ts')).toContain('// @ns:bootstrap');
+      expect(tree.readContent('/shop-api/apps/api/src/main.ts')).toContain('// @ns:after-listen');
+      expect(tree.readContent('/shop-api/libs/common/src/config/env.validation.ts')).toContain('// @ns:env');
+      const pkg = JSON.parse(tree.readContent('/shop-api/package.json'));
+      expect(pkg.scripts.g).toBe('nest-schematics');
+      expect(pkg.devDependencies['nest-schematics']).toBe(`^${manifest.version}`);
     });
 
     it('creates the monorepo under a dasherized folder', () => {
@@ -123,6 +135,7 @@ describe('nest-starter', () => {
       expect(pkg.scripts.build).toBe('nest build api');
       expect(pkg.dependencies['telegraf']).toBeUndefined();
       expect(pkg.dependencies['@nestjs/schedule']).toBeUndefined();
+      expect(JSON.parse(tree.readContent('/lean/nest-schematics.json')).features).toEqual({});
       expect(Object.keys(JSON.parse(tree.readContent('/lean/nest-cli.json')).projects).sort()).toEqual([
         'api',
         'common',

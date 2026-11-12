@@ -10,6 +10,7 @@
     "start:dev:<%= app %>": "nest start <%= app %> --watch",
     "start:prod:<%= app %>": "node dist/apps/<%= app %>/main",<% } %>
     "start:dev": "nest start api --watch",
+    "g": "nest-schematics",
     "typeorm": "typeorm-ts-node-commonjs -r tsconfig-paths/register -d libs/database/src/data-source.ts",
     "migration:generate": "npm run typeorm -- migration:generate libs/database/src/migrations/$npm_config_name",
     "migration:run": "npm run typeorm -- migration:run",
@@ -42,6 +43,7 @@
     "@nestjs/schematics": "^11.0.5",
     "@types/express": "^5.0.3",
     "@types/node": "^22.15.0",
+    "nest-schematics": "^<%= version %>",
     "ts-loader": "^9.5.2",
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",

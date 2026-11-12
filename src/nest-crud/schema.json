@@ -55,6 +55,11 @@
     "flat": {
       "type": "boolean",
       "description": "Ignored (Nest CLI passes it); resources always get their own folder"
+    },
+    "force": {
+      "type": "boolean",
+      "description": "Overwrite generated files that you have edited (default: keep them and warn)",
+      "default": false
     }
   },
   "required": [

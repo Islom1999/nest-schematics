@@ -14,6 +14,7 @@ import {
 } from '@angular-devkit/schematics';
 import { NodePackageInstallTask } from '@angular-devkit/schematics/tasks';
 import { normalize, strings } from '@angular-devkit/core';
+import { PACKAGE_VERSION } from '../utils/ops';
 import { Schema } from './schema';
 
 export const KNOWN_APPS = ['api', 'bot', 'worker'] as const;
@@ -63,7 +64,7 @@ export function nestStarter(options: Schema): Rule {
         const app = /^\/apps\/([^/]+)\//.exec(path)?.[1];
         return !app || apps.includes(app);
       }),
-      applyTemplates({ ...strings, name: projectName, apps }),
+      applyTemplates({ ...strings, name: projectName, apps, version: PACKAGE_VERSION }),
       forEach((entry) => {
         if (/(^|\/)gitignore$/.test(entry.path)) {
           return {
@@ -92,7 +93,7 @@ export function nestStarter(options: Schema): Rule {
         for (const app of apps.filter((a) => a !== 'api')) {
           ctx.logger.info(`  npm run start:dev:${app}`);
         }
-        ctx.logger.info(`  npx schematics fuse-nest-schematics:crud product --fields "name:string,price:number"`);
+        ctx.logger.info(`  npm run g -- crud product --fields "name:string,price:number"`);
       },
     ])(tree, context);
   };

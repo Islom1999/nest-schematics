@@ -38,7 +38,7 @@ function files(name: string, root = '/apps/api/src/modules'): string[] {
 }
 
 describe('nest-crud', () => {
-  const runner = new SchematicTestRunner('fuse-nest-schematics', collectionPath);
+  const runner = new SchematicTestRunner('nest-schematics', collectionPath);
 
   describe('with --fields', () => {
     let tree: UnitTestTree;
@@ -136,7 +136,7 @@ describe('nest-crud', () => {
 
     it('exports the entity from the database barrel', () => {
       expect(tree.readContent('/libs/database/src/entities/index.ts')).toBe(
-        "// barrel\nexport {};\nexport * from './sp-year.entity';\n",
+        "// barrel\nexport * from './sp-year.entity';\n",
       );
     });
 

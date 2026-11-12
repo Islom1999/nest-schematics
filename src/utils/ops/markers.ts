@@ -1,0 +1,58 @@
+import { SchematicsException, Tree } from '@angular-devkit/schematics';
+import { readText, writeText } from './text';
+
+/**
+ * Starter files carry marker comments where add-ons insert code, e.g.
+ * `// @ns:bootstrap` in main.ts. The marker line stays; code goes right above
+ * it with the marker's indentation.
+ */
+export const MARKERS = {
+  /** apps/api/src/main.ts, after global pipes/filters, before Swagger. */
+  bootstrap: '// @ns:bootstrap',
+  /** apps/api/src/main.ts, after `listen()`. */
+  afterListen: '// @ns:after-listen',
+  /** libs/common/src/config/env.validation.ts, last line inside the class. */
+  env: '// @ns:env',
+  /** docker-compose.yml, end of `services:`. */
+  composeServices: '# @ns:services',
+  /** docker-compose.yml, end of `volumes:`. */
+  composeVolumes: '# @ns:volumes',
+} as const;
+
+/**
+ * Inserts `code` above `marker` in `path`. `key` (default: the code itself)
+ * must not be present in the file yet, otherwise nothing happens.
+ *
+ * @returns false when the code was already there.
+ */
+export function insertAtMarker(tree: Tree, path: string, marker: string, code: string, key = code.trim()): boolean {
+  const text = readText(tree, path);
+  const lines = text.split('\n');
+  const index = lines.findIndex((l) => l.trim() === marker);
+  if (index < 0) {
+    throw new SchematicsException(
+      `Marker "${marker}" not found in ${path}. Restore it, or add this code manually:\n${code}`,
+    );
+  }
+  if (dedent(text).includes(dedent(key))) return false;
+  const indent = /^[ \t]*/.exec(lines[index])![0];
+  const block = code
+    .replace(/\n+$/, '')
+    .split('\n')
+    .map((l) => (l ? `${indent}${l}` : l));
+  lines.splice(index, 0, ...block);
+  writeText(tree, path, lines.join('\n'));
+  return true;
+}
+
+/** Strips each line's indentation so a check does not depend on where the code sits. */
+function dedent(text: string): string {
+  return text
+    .split('\n')
+    .map((l) => l.trim())
+    .join('\n');
+}
+
+export function hasMarker(tree: Tree, path: string, marker: string): boolean {
+  return tree.exists(path) && readText(tree, path).split('\n').some((l) => l.trim() === marker);
+}

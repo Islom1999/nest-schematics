@@ -1,2 +1,2 @@
-// Entity barrel — `fuse-nest-schematics:crud` appends one export per resource.
+// Entity barrel — `npm run g -- crud` appends one export per resource.
 export {};

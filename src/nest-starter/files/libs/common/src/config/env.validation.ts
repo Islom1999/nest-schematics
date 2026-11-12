@@ -31,6 +31,7 @@ class EnvironmentVariables {
 
   @IsString()
   DB_DATABASE: string;
+  // @ns:env (add-ons insert their keys above this line)
 }
 
 export function validateEnv(config: Record<string, unknown>) {

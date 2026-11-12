@@ -37,6 +37,7 @@ async function bootstrap() {
     }),
   );
   app.useGlobalFilters(new AllExceptionsFilter());
+  // @ns:bootstrap
 
   const swaggerPath = setupSwagger(app);
 
@@ -44,6 +45,7 @@ async function bootstrap() {
   await app.listen(port);
   Logger.log(`API: http://localhost:${port}/api`, 'Bootstrap');
   if (swaggerPath) Logger.log(`Swagger: http://localhost:${port}/${swaggerPath}`, 'Bootstrap');
+  // @ns:after-listen
 }
 
 void bootstrap();
