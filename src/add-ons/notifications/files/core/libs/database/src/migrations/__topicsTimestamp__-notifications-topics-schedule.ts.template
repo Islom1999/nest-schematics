@@ -1,0 +1,45 @@
+import { MigrationInterface, QueryRunner } from 'typeorm';
+
+/**
+ * Topic subscriptions and scheduled campaigns (npm run g -- notifications):
+ * `notification_topics`, and `meta`, `status` and `send_at` on `notification_campaigns`
+ * (existing campaigns count as `sent`). Matches entities/notification-topic.entity.ts
+ * and notification-campaign.entity.ts.
+ */
+export class NotificationsTopicsSchedule<%= topicsTimestamp %> implements MigrationInterface {
+  name = 'NotificationsTopicsSchedule<%= topicsTimestamp %>';
+
+  public async up(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query(`
+      CREATE TABLE "notification_topics" (
+        "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
+        "created_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+        "updated_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+        "deleted_at" TIMESTAMP WITH TIME ZONE,
+        "user_id" uuid NOT NULL,
+        "topic" character varying(100) NOT NULL,
+        CONSTRAINT "<%= topicsPrimaryKey %>" PRIMARY KEY ("id")
+      )
+    `);
+    await queryRunner.query(`CREATE INDEX "<%= topicsDeletedAtIndex %>" ON "notification_topics" ("deleted_at")`);
+    await queryRunner.query(`CREATE UNIQUE INDEX "UQ_notification_topics_user_id_topic" ON "notification_topics" ("user_id", "topic")`);
+    await queryRunner.query(`CREATE INDEX "IDX_notification_topics_topic" ON "notification_topics" ("topic")`);
+    await queryRunner.query(
+      `ALTER TABLE "notification_topics" ADD CONSTRAINT "FK_notification_topics_user_id" FOREIGN KEY ("user_id") ` +
+        `REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE NO ACTION`,
+    );
+    await queryRunner.query(`ALTER TABLE "notification_campaigns" ADD "status" character varying(16) NOT NULL DEFAULT 'sent'`);
+    await queryRunner.query(`ALTER TABLE "notification_campaigns" ADD "meta" jsonb`);
+    await queryRunner.query(`ALTER TABLE "notification_campaigns" ADD "send_at" TIMESTAMP WITH TIME ZONE`);
+    await queryRunner.query(`CREATE INDEX "IDX_notification_campaigns_status_send_at" ON "notification_campaigns" ("status", "send_at")`);
+  }
+
+  public async down(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query(`DROP INDEX "IDX_notification_campaigns_status_send_at"`);
+    await queryRunner.query(`ALTER TABLE "notification_campaigns" DROP COLUMN "send_at"`);
+    await queryRunner.query(`ALTER TABLE "notification_campaigns" DROP COLUMN "meta"`);
+    await queryRunner.query(`ALTER TABLE "notification_campaigns" DROP COLUMN "status"`);
+    await queryRunner.query(`ALTER TABLE "notification_topics" DROP CONSTRAINT "FK_notification_topics_user_id"`);
+    await queryRunner.query(`DROP TABLE "notification_topics"`);
+  }
+}

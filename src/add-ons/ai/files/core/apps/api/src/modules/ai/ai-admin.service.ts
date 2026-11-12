@@ -3,7 +3,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { PaginatedResult, runTableQuery, TableQueryDto } from '@app/common';
 import { AiLog } from '@app/database';
-import { AiStatsDto } from './dto/ai-stats.dto';
+import { addDays, dayKey, dayWindow, eachDay, parseDay } from './ai-days';
+import { AiStatsDto, AiStatsQueryDto } from './dto/ai-stats.dto';
 
 const num = (value: string | number | null | undefined): number => (value === null || value === undefined ? 0 : Number(value));
 const nullableNum = (value: string | number | null | undefined): number | null =>
@@ -34,9 +35,31 @@ export class AiAdminService {
     return log;
   }
 
-  async stats(days: number, top: number): Promise<AiStatsDto> {
-    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-    const base = () => this.logs.createQueryBuilder('log').where('log.createdAt >= :since', { since });
+  /**
+   * Usage statistics for the last `days` days, or for the UTC days `from`..`to`
+   * (both included; `days` is then only the length when one end is missing).
+   */
+  async stats(query: AiStatsQueryDto): Promise<AiStatsDto> {
+    const days = query.days ?? 30;
+    const top = query.top ?? 10;
+    let since: Date;
+    let until: Date | null = null;
+    let firstDay: Date;
+    let lastDay: Date;
+    if (query.from || query.to) {
+      const window = dayWindow(query.from, query.to, days);
+      since = firstDay = window.from;
+      lastDay = window.to;
+      until = addDays(window.to, 1);
+    } else {
+      since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+      firstDay = parseDay(dayKey(since), 'from');
+      lastDay = parseDay(dayKey(new Date()), 'to');
+    }
+    const base = () => {
+      const qb = this.logs.createQueryBuilder('log').where('log.createdAt >= :since', { since });
+      return until ? qb.andWhere('log.createdAt < :until', { until }) : qb;
+    };
     const tokens = 'COALESCE(SUM(log.promptTokens + log.completionTokens), 0)';
     const cost = 'COALESCE(SUM(log.costUsd), 0)';
 
@@ -87,8 +110,12 @@ export class AiAdminService {
       .limit(top)
       .getRawMany<Record<string, string>>();
 
+    const costOf = new Map(byDay.map((r) => [r.day, usd(r.costUsd)]));
+
     return {
       since: since.toISOString(),
+      from: dayKey(firstDay),
+      to: dayKey(lastDay),
       totals: {
         requests: num(totals?.requests),
         errors: num(totals?.errors),
@@ -105,6 +132,7 @@ export class AiAdminService {
         tokens: num(r.tokens),
         costUsd: usd(r.costUsd),
       })),
+      costByDay: eachDay(firstDay, lastDay).map((day) => ({ day, costUsd: costOf.get(day) ?? 0 })),
       byModel: byModel.map((r) => ({
         provider: r.provider ?? '',
         model: r.model ?? '',

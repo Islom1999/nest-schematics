@@ -5,6 +5,7 @@ import {
   ArrayMinSize,
   IsArray,
   IsBoolean,
+  IsDateString,
   IsEnum,
   IsInt,
   IsNotEmpty,
@@ -22,6 +23,9 @@ import {
 import { apiEnum, TableQueryDto } from '@app/common';
 import { NotificationCampaign, NotificationTarget } from '@app/database';
 import { PushPlatform } from '../../../client-auth/dto/client-auth.dto';
+
+/** FCM topic names: letters, digits and - _ . ~ % (1..100). */
+export const TOPIC_RE = /^[A-Za-z0-9_.~%-]{1,100}$/;
 
 const toBoolean = ({ value }: { value: unknown }) => (value === 'true' ? true : value === 'false' ? false : value);
 const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
@@ -70,7 +74,10 @@ export class NotificationTableQueryDto extends TableQueryDto {
 
 /** `POST admin/notifications/broadcast`. */
 export class BroadcastNotificationDto {
-  @ApiProperty({ ...apiEnum(NotificationTarget, 'NotificationTarget'), description: 'all, users (userIds) or platform (platform)' })
+  @ApiProperty({
+    ...apiEnum(NotificationTarget, 'NotificationTarget'),
+    description: 'all, users (userIds), platform (platform) or topic (topic: the users subscribed to it)',
+  })
   @IsEnum(NotificationTarget)
   target: NotificationTarget;
 
@@ -86,6 +93,11 @@ export class BroadcastNotificationDto {
   @ValidateIf((dto: BroadcastNotificationDto) => dto.target === NotificationTarget.PLATFORM)
   @IsEnum(PushPlatform)
   platform?: PushPlatform;
+
+  @ApiPropertyOptional({ type: String, example: 'news', description: 'Required for target topic: letters, digits and - _ . ~ % (max 100)' })
+  @ValidateIf((dto: BroadcastNotificationDto) => dto.target === NotificationTarget.TOPIC)
+  @Matches(TOPIC_RE)
+  topic?: string;
 
   @ApiPropertyOptional({ type: String, example: 'promo', description: 'Default general' })
   @IsOptional()
@@ -121,6 +133,48 @@ export class BroadcastNotificationDto {
   @IsOptional()
   @IsObject()
   meta?: Record<string, unknown>;
+
+  @ApiPropertyOptional({
+    type: String,
+    format: 'date-time',
+    example: '2026-12-01T09:00:00Z',
+    description:
+      'Send later, at this time (must be in the future). The campaign has status scheduled until then; it needs the queue add-on (delayed job) ' +
+      'or the worker (cron, every minute, push only). Cancel it with DELETE campaigns/:id',
+  })
+  @IsOptional()
+  @IsDateString()
+  sendAt?: string;
+}
+
+/** `GET client/notifications/topics` and `PUT client/notifications/topics/:topic`: one subscription. */
+export class NotificationTopicDto {
+  @ApiProperty({ type: String, example: 'news' })
+  topic: string;
+
+  @ApiProperty({ type: String, format: 'date-time' })
+  subscribedAt: Date;
+}
+
+/** One push device (a live session with a push token) of a user, for support. */
+export class PushDeviceDto {
+  @ApiProperty({ type: String, format: 'uuid', description: 'The session the token belongs to' })
+  sessionId: string;
+
+  @ApiProperty({ type: String, example: 'fcm123…9xyz', description: 'First 6 and last 4 characters only; the full token is never returned' })
+  tokenMasked: string;
+
+  @ApiPropertyOptional({ type: String, nullable: true, example: 'android', description: 'ios, android or web' })
+  platform: string | null;
+
+  @ApiPropertyOptional({ type: String, nullable: true, example: 'Pixel 8' })
+  deviceName: string | null;
+
+  @ApiPropertyOptional({ type: String, nullable: true, example: '2.4.1' })
+  appVersion: string | null;
+
+  @ApiPropertyOptional({ type: String, format: 'date-time', nullable: true, description: 'When the session was last used' })
+  lastSeenAt: Date | null;
 }
 
 /** Live counts of a campaign's notifications. */

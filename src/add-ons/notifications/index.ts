@@ -38,7 +38,6 @@ export const NOTIFICATION_CHANNELS = ['fcm', 'telegram', 'email'] as const;
 export type NotificationChannelName = (typeof NOTIFICATION_CHANNELS)[number];
 
 const MIGRATIONS_DIR = 'libs/database/src/migrations';
-const MIGRATION_RE = /^(\d{13})-notifications\.ts$/;
 const CHANNELS_FILE = 'libs/common/src/notifications/notification-channels.ts';
 const CHANNELS_MARKER = '// @ns:notification-channels';
 /** Created once, then only extended at its marker. */
@@ -69,13 +68,14 @@ export function parseChannels(value: string | undefined): NotificationChannelNam
   return NOTIFICATION_CHANNELS.filter((c) => c === 'fcm' || list.includes(c));
 }
 
-/** Reuses the timestamp of an existing migration so re-runs change nothing. */
-function migrationTimestamp(tree: Tree, root: string): string {
+/** Reuses the timestamp of an existing `<ts>-<name>.ts` migration so re-runs change nothing. */
+function migrationTimestamp(tree: Tree, root: string, name: string, fallback: number): string {
+  const re = new RegExp(`^(\\d{13})-${name}\\.ts$`);
   for (const file of tree.getDir(prefixed(root, MIGRATIONS_DIR)).subfiles) {
-    const match = MIGRATION_RE.exec(file);
+    const match = re.exec(file);
     if (match) return match[1];
   }
-  return String(Date.now());
+  return String(fallback);
 }
 
 /** Sign-in methods auth-client was installed with (they decide the `users` columns). */
@@ -119,7 +119,10 @@ export function notifications(options: Schema): Rule {
       }
     }
 
-    const timestamp = migrationTimestamp(tree, root);
+    const now = Date.now();
+    const timestamp = migrationTimestamp(tree, root, 'notifications', now);
+    // Topics and scheduled campaigns come in their own migration, so projects that already ran the first one get them too.
+    const topicsTimestamp = migrationTimestamp(tree, root, 'notifications-topics-schedule', now + 1);
     const source = (dir: string, templates: Record<string, unknown> = {}): Source =>
       apply(url(dir), [applyTemplates(templates), root ? move(root) : noop()]);
     const sources: Source[] = [
@@ -129,6 +132,9 @@ export function notifications(options: Schema): Rule {
         campaignsDeletedAtIndex: defaultIndexName('notification_campaigns', ['deleted_at']),
         notificationsPrimaryKey: primaryKeyName('notifications', ['id']),
         notificationsDeletedAtIndex: defaultIndexName('notifications', ['deleted_at']),
+        topicsTimestamp,
+        topicsPrimaryKey: primaryKeyName('notification_topics', ['id']),
+        topicsDeletedAtIndex: defaultIndexName('notification_topics', ['deleted_at']),
       }),
       ...channels.filter((c) => c !== 'fcm').map((c) => source(`./files/${c}`)),
     ];
@@ -137,7 +143,14 @@ export function notifications(options: Schema): Rule {
       const entities = `${project.entitiesDir}/index.ts`;
       addBarrelExport(host, entities, 'notification-campaign.entity');
       addBarrelExport(host, entities, 'notification.entity');
+      addBarrelExport(host, entities, 'notification-topic.entity');
       addMigration(host, `Notifications${timestamp}`, `${MIGRATIONS_DIR}/${timestamp}-notifications`, root);
+      addMigration(
+        host,
+        `NotificationsTopicsSchedule${topicsTimestamp}`,
+        `${MIGRATIONS_DIR}/${topicsTimestamp}-notifications-topics-schedule`,
+        root,
+      );
       addPermissions(host, 'notification', ['read', 'write'], root);
       addModuleImport(host, project.apiModule, 'NotificationsModule', './modules/notifications/notifications.module');
       addPackageJson(host, { dependencies: { 'firebase-admin': '^13.4.0' } }, root);

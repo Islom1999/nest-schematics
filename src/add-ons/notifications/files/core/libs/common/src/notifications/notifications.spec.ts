@@ -1,7 +1,7 @@
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Repository } from 'typeorm';
-import { Notification, NotificationCampaign, NotificationPushStatus, User } from '@app/database';
+import { Notification, NotificationCampaign, NotificationCampaignStatus, NotificationPushStatus, NotificationTarget, User } from '@app/database';
 import { FCM_MULTICAST_LIMIT, FcmSender } from './fcm.sender';
 import { parseServiceAccount } from './firebase-credentials';
 import { NotificationChannel } from './notification-channel';
@@ -120,17 +120,28 @@ describe('NotificationService', () => {
   const activePushTokens = jest.fn(async (_userIds: string[]): Promise<PushTarget[]> => []);
   const clearPushToken = jest.fn(async (_sessionId: string) => undefined);
 
+  const andWhere = jest.fn();
+  const getOne = jest.fn(async (): Promise<unknown> => null);
+  const campaignFindOne = jest.fn(async (..._args: unknown[]): Promise<unknown> => null);
+  const campaignFind = jest.fn(async (..._args: unknown[]): Promise<unknown[]> => []);
+  const campaignUpdate = jest.fn(async (..._args: unknown[]) => ({ affected: 1 }));
+
   function service(values: Record<string, string> = {}, jobs: NotificationJobQueue | null = null, channels: NotificationChannel[] = []): NotificationService {
     const qb = {
       select: () => qb,
       orderBy: () => qb,
-      andWhere: () => qb,
+      limit: () => qb,
+      andWhere: (...args: unknown[]) => {
+        andWhere(...args);
+        return qb;
+      },
       getRawMany: async () => [{ id: U1 }, { id: U2 }],
     };
+    const rowQuery = { select: () => rowQuery, where: () => rowQuery, getOne };
     const store: PushTokenStore = { activePushTokens, clearPushToken };
     return new NotificationService(
-      { insert, update } as unknown as Repository<Notification>,
-      {} as Repository<NotificationCampaign>,
+      { insert, update, createQueryBuilder: () => rowQuery } as unknown as Repository<Notification>,
+      { findOne: campaignFindOne, find: campaignFind, update: campaignUpdate } as unknown as Repository<NotificationCampaign>,
       { createQueryBuilder: () => qb } as unknown as Repository<User>,
       store,
       new FcmSender(config(values)),
@@ -155,6 +166,15 @@ describe('NotificationService', () => {
     activePushTokens.mockReset();
     activePushTokens.mockResolvedValue([]);
     clearPushToken.mockClear();
+    andWhere.mockClear();
+    getOne.mockReset();
+    getOne.mockResolvedValue(null);
+    campaignFindOne.mockReset();
+    campaignFindOne.mockResolvedValue(null);
+    campaignFind.mockReset();
+    campaignFind.mockResolvedValue([]);
+    campaignUpdate.mockClear();
+    campaignUpdate.mockResolvedValue({ affected: 1 });
   });
 
   it('saves the rows first and marks them skipped when FCM is not configured', async () => {
@@ -254,6 +274,148 @@ describe('NotificationService', () => {
       await svc.deliverChannel('email', [U1], { title: 'Hello' });
       expect(deliver).toHaveBeenCalledWith([U1], { title: 'Hello' });
       await expect(svc.deliverChannel('telegram', [U1], { title: 'Hello' })).rejects.toThrow('not set up');
+    });
+  });
+
+  describe('topics', () => {
+    it('sends to the unblocked subscribers of the topic', async () => {
+      const result = await service().send({ topic: 'news' }, { title: 'Hello' });
+
+      const filter = andWhere.mock.calls.find(([sql]) => String(sql).includes('"notification_topics"'));
+      expect(filter?.[1]).toEqual({ topic: 'news' });
+      expect(andWhere.mock.calls.some(([sql]) => sql === 'u.isBlocked = false')).toBe(true);
+      expect(result.created).toBe(2);
+    });
+
+    it('needs a topic name', async () => {
+      await expect(service().send({ topic: '' }, { title: 'Hello' })).rejects.toThrow('A topic needs a name');
+    });
+
+    it('turns a topic broadcast into a job that carries the topic', async () => {
+      const enqueue = jest.fn(async (..._args: unknown[]) => ({ id: 'j1' }));
+      const result = await service({}, { enqueue }).send({ topic: 'news' }, { title: 'Hello' }, { campaignId: 'c1' });
+
+      expect(result.queued).toBe(true);
+      expect(insert).not.toHaveBeenCalled();
+      const [name, data] = enqueue.mock.calls[0] as [string, { topic: string; options: unknown }];
+      expect([name, data.topic, data.options]).toEqual(['notifications.broadcast', 'news', { campaignId: 'c1' }]);
+    });
+
+    it('runs the broadcast job for the topic and marks the campaign sent', async () => {
+      const result = await service().runBroadcast({ title: 'Hello' }, { campaignId: 'c1' }, 'news');
+
+      expect(result.created).toBe(2);
+      expect(andWhere.mock.calls.some(([sql]) => String(sql).includes('"notification_topics"'))).toBe(true);
+      expect(campaignUpdate).toHaveBeenCalledWith('c1', { sentCount: 2, failedCount: 0, status: NotificationCampaignStatus.SENT });
+    });
+  });
+
+  describe('scheduled campaigns', () => {
+    const enqueue = jest.fn(async (..._args: unknown[]) => ({ id: 'j1' }));
+    const jobs: NotificationJobQueue = { enqueue };
+    const campaign = (extra: Partial<NotificationCampaign> = {}) =>
+      ({
+        id: 'c1',
+        target: NotificationTarget.USERS,
+        filters: { userIds: [U1] },
+        type: 'promo',
+        title: 'Sale',
+        body: '',
+        link: null,
+        image: null,
+        meta: null,
+        status: NotificationCampaignStatus.SCHEDULED,
+        sendAt: new Date(Date.now() - 1000),
+        ...extra,
+      }) as NotificationCampaign;
+
+    beforeEach(() => enqueue.mockClear());
+
+    it('queues a delayed job at sendAt, one run only, and does nothing without the queue', async () => {
+      const sendAt = new Date(Date.now() + 3600_000);
+      await service({}, jobs).schedule(campaign({ sendAt }));
+
+      const [name, data, opts] = enqueue.mock.calls[0] as [string, { campaignId: string }, { delay: number; attempts: number; queue: string }];
+      expect([name, data.campaignId, opts.attempts, opts.queue]).toEqual(['notifications.scheduled', 'c1', 1, 'notifications']);
+      expect(opts.delay).toBeGreaterThan(3500_000);
+      expect(opts.delay).toBeLessThanOrEqual(3600_000);
+
+      enqueue.mockClear();
+      await service().schedule(campaign({ sendAt }));
+      expect(enqueue).not.toHaveBeenCalled();
+    });
+
+    it('waits at most a week per job and re-queues itself for the rest', async () => {
+      const far = campaign({ sendAt: new Date(Date.now() + 30 * 24 * 3600_000) });
+      await service({}, jobs).schedule(far);
+      expect((enqueue.mock.calls[0][2] as { delay: number }).delay).toBe(7 * 24 * 3600_000);
+
+      enqueue.mockClear();
+      campaignFindOne.mockResolvedValue(far);
+      expect(await service({}, jobs).dispatchCampaign('c1')).toBeNull();
+      expect(enqueue).toHaveBeenCalledTimes(1);
+      expect(insert).not.toHaveBeenCalled();
+    });
+
+    it('claims the campaign, sends it once and stores the totals', async () => {
+      campaignFindOne.mockResolvedValue(campaign());
+      const result = await service().dispatchCampaign('c1');
+
+      expect(result).toEqual({ created: 2, pushSent: 0, pushFailed: 0, pushSkipped: 2 });
+      const [claimWhere, claimSet] = campaignUpdate.mock.calls[0] as [Record<string, unknown>, unknown];
+      expect(claimWhere).toEqual(expect.objectContaining({ id: 'c1', status: NotificationCampaignStatus.SCHEDULED }));
+      expect(claimSet).toEqual({ status: NotificationCampaignStatus.SENDING });
+      expect(campaignUpdate).toHaveBeenLastCalledWith('c1', { sentCount: 2, failedCount: 0, status: NotificationCampaignStatus.SENT });
+      expect((insert.mock.calls[0][0] as { userId: string; campaignId: string }[]).map((r) => [r.userId, r.campaignId])).toEqual([[U1, 'c1'], [U2, 'c1']]);
+    });
+
+    it('sends nothing when the campaign is gone, not scheduled, claimed by someone else or not due', async () => {
+      expect(await service().dispatchCampaign('c1')).toBeNull();
+
+      campaignFindOne.mockResolvedValue(campaign({ status: NotificationCampaignStatus.SENT }));
+      expect(await service().dispatchCampaign('c1')).toBeNull();
+
+      campaignFindOne.mockResolvedValue(campaign());
+      campaignUpdate.mockResolvedValueOnce({ affected: 0 });
+      expect(await service().dispatchCampaign('c1')).toBeNull();
+
+      campaignFindOne.mockResolvedValue(campaign({ sendAt: new Date(Date.now() + 3600_000) }));
+      campaignUpdate.mockClear();
+      expect(await service().dispatchCampaign('c1', { onlyDue: true })).toBeNull();
+      expect(campaignUpdate).not.toHaveBeenCalled();
+      expect(insert).not.toHaveBeenCalled();
+    });
+
+    it('marks the campaign failed when the send throws', async () => {
+      campaignFindOne.mockResolvedValue(campaign());
+      insert.mockRejectedValueOnce(new Error('db down'));
+      await expect(service().dispatchCampaign('c1')).rejects.toThrow('db down');
+      expect(campaignUpdate).toHaveBeenLastCalledWith('c1', { status: NotificationCampaignStatus.FAILED });
+    });
+
+    it('the cron job sends every due campaign and survives a failing one', async () => {
+      campaignFind.mockResolvedValue([{ id: 'c1' }, { id: 'c2' }, { id: 'c3' }]);
+      campaignFindOne.mockImplementation(async (...args: unknown[]) => {
+        const id = (args[0] as { where: { id: string } }).where.id;
+        return campaign({ id });
+      });
+      insert.mockRejectedValueOnce(new Error('db down'));
+      expect(await service().dispatchDueCampaigns()).toBe(2);
+    });
+  });
+
+  describe('resend', () => {
+    it('marks the row unread and pending, then pushes it again', async () => {
+      getOne.mockResolvedValue({ id: 'n1', userId: U1, campaignId: null, type: 'general', title: 'Hi', body: '', link: null, image: null });
+      expect(await service().resend('n1')).toBe(true);
+
+      expect(update.mock.calls[0]).toEqual([{ id: 'n1' }, { readAt: null, pushStatus: NotificationPushStatus.PENDING, pushError: null }]);
+      expect(statusUpdates().slice(1)).toEqual([[['n1'], NotificationPushStatus.SKIPPED, 'Push is not configured (FIREBASE_SERVICE_ACCOUNT_JSON)']]);
+    });
+
+    it('says so when the notification does not exist', async () => {
+      expect(await service().resend('missing')).toBe(false);
+      expect(update).not.toHaveBeenCalled();
     });
   });
 

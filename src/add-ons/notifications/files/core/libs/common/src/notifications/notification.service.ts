@@ -1,9 +1,16 @@
 import { BadRequestException, Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { In, IsNull, LessThanOrEqual, Repository } from 'typeorm';
 import type { QueryDeepPartialEntity } from 'typeorm/query-builder/QueryPartialEntity';
-import { Notification, NotificationCampaign, NotificationPushStatus, User } from '@app/database';
+import {
+  Notification,
+  NotificationCampaign,
+  NotificationCampaignStatus,
+  NotificationPushStatus,
+  NotificationTarget,
+  User,
+} from '@app/database';
 import { FcmSender } from './fcm.sender';
 import { NOTIFICATION_CHANNELS, NotificationChannel } from './notification-channel';
 import {
@@ -12,6 +19,7 @@ import {
   NOTIFICATION_QUEUE,
   NotificationJobQueue,
   NotificationPayload,
+  NotificationRecipients,
   PushMessage,
   PushTarget,
   SendNotificationOptions,
@@ -25,6 +33,10 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 /** Retry delay after attempt n: 1, 2, 4, 8... minutes, at most one hour. */
 const RETRY_BASE_SECONDS = 60;
 const RETRY_MAX_SECONDS = 3600;
+/** A delayed job waits at most this long, then re-queues itself for the rest (long delays are fragile). */
+const MAX_JOB_DELAY_MS = 7 * 24 * 3600 * 1000;
+/** A job that fires a moment early still sends. */
+const SCHEDULE_TOLERANCE_MS = 1000;
 
 interface SavedRow {
   id: string;
@@ -43,6 +55,8 @@ interface PushCounts {
 const RETRY_COLUMNS = ['n.id', 'n.userId', 'n.campaignId', 'n.type', 'n.title', 'n.body', 'n.link', 'n.image'];
 
 type NormalizedPayload = Required<Omit<NotificationPayload, 'meta'>> & { meta: Record<string, unknown> | null };
+
+const isTopic = (to: NotificationRecipients): to is { topic: string } => typeof to === 'object' && !Array.isArray(to);
 
 function chunks<T>(items: T[], size: number): T[][] {
   const out: T[][] = [];
@@ -89,13 +103,19 @@ export class NotificationService {
 
   /**
    * Saves a notification for each user (`'all'` = every active, unblocked
-   * user, in batches) and pushes it. Unknown or deleted user ids are ignored.
+   * user, in batches; `{ topic }` = the unblocked users subscribed to it) and
+   * pushes it. Unknown or deleted user ids are ignored.
    */
-  async send(to: string[] | 'all', payload: NotificationPayload, options: SendNotificationOptions = {}): Promise<SendNotificationResult> {
+  async send(to: NotificationRecipients, payload: NotificationPayload, options: SendNotificationOptions = {}): Promise<SendNotificationResult> {
     const data = this.normalize(payload);
-    if (to === 'all' && this.jobs) {
-      // The loop over every user is a job: no retries, it would save the rows twice.
-      await this.jobs.enqueue(NOTIFICATION_JOB.broadcast, { payload: data, options }, { queue: NOTIFICATION_QUEUE, attempts: 1 });
+    if (isTopic(to) && !to.topic) throw new BadRequestException('A topic needs a name');
+    if ((to === 'all' || isTopic(to)) && this.jobs) {
+      // The loop over every recipient is a job: no retries, it would save the rows twice.
+      await this.jobs.enqueue(
+        NOTIFICATION_JOB.broadcast,
+        { payload: data, options, ...(isTopic(to) ? { topic: to.topic } : {}) },
+        { queue: NOTIFICATION_QUEUE, attempts: 1 },
+      );
       return { created: 0, pushSent: 0, pushFailed: 0, pushSkipped: 0, queued: true };
     }
     return this.sendNow(to, data, options);
@@ -105,12 +125,112 @@ export class NotificationService {
    * The `notifications.broadcast` job: sends to every user now and, for an
    * admin campaign, stores the totals on it (`sentCount`, `failedCount`).
    */
-  async runBroadcast(payload: NotificationPayload, options: SendNotificationOptions): Promise<SendNotificationResult> {
-    const result = await this.sendNow('all', this.normalize(payload), options);
-    if (options.campaignId) {
-      await this.campaigns.update(options.campaignId, { sentCount: result.created, failedCount: result.pushFailed });
-    }
+  async runBroadcast(payload: NotificationPayload, options: SendNotificationOptions, topic?: string): Promise<SendNotificationResult> {
+    const result = await this.sendNow(topic ? { topic } : 'all', this.normalize(payload), options);
+    if (options.campaignId) await this.storeTotals(options.campaignId, result);
     return result;
+  }
+
+  private storeTotals(campaignId: string, result: SendNotificationResult): Promise<unknown> {
+    return this.campaigns.update(campaignId, {
+      sentCount: result.created,
+      failedCount: result.pushFailed,
+      status: NotificationCampaignStatus.SENT,
+    });
+  }
+
+  /**
+   * Sends a saved campaign to its recipients now (`target` + `filters`) and
+   * stores the totals on it. With the queue add-on a broadcast to everyone or
+   * to a topic is a job, so its totals arrive when the job is done.
+   */
+  async sendCampaign(campaign: NotificationCampaign): Promise<SendNotificationResult> {
+    let to: NotificationRecipients = 'all';
+    if (campaign.target === NotificationTarget.USERS) to = campaign.filters?.userIds ?? [];
+    if (campaign.target === NotificationTarget.TOPIC) to = { topic: campaign.filters?.topic ?? '' };
+    const result = await this.send(
+      to,
+      { type: campaign.type, title: campaign.title, body: campaign.body, link: campaign.link, image: campaign.image, meta: campaign.meta },
+      { campaignId: campaign.id, platform: campaign.target === NotificationTarget.PLATFORM ? (campaign.filters?.platform ?? null) : null },
+    );
+    if (!result.queued) await this.storeTotals(campaign.id, result);
+    return result;
+  }
+
+  /**
+   * With the queue add-on: a delayed `notifications.scheduled` job for a
+   * `scheduled` campaign (at most a week at a time; the job re-queues itself
+   * for the rest). Without the queue the worker's cron job picks the campaign
+   * up (`dispatchDueCampaigns()`), so this does nothing.
+   */
+  async schedule(campaign: NotificationCampaign): Promise<void> {
+    if (!this.jobs || !campaign.sendAt) return;
+    const delay = Math.min(Math.max(campaign.sendAt.getTime() - Date.now(), 0), MAX_JOB_DELAY_MS);
+    // No retries: a retry after a partial send would save the rows twice.
+    await this.jobs.enqueue(NOTIFICATION_JOB.scheduled, { campaignId: campaign.id }, { queue: NOTIFICATION_QUEUE, attempts: 1, delay });
+  }
+
+  /**
+   * Sends one scheduled campaign: the `notifications.scheduled` job, and the
+   * cron job through {@link dispatchDueCampaigns}. The campaign is claimed
+   * first (`scheduled` to `sending`), so it goes out once whoever gets there
+   * first, and a cancelled (deleted) campaign never does.
+   *
+   * @returns the totals, or null when there was nothing to send (gone, already sent, not due yet).
+   */
+  async dispatchCampaign(id: string, options: { onlyDue?: boolean } = {}): Promise<SendNotificationResult | null> {
+    const campaign = await this.campaigns.findOne({ where: { id } });
+    if (!campaign || campaign.status !== NotificationCampaignStatus.SCHEDULED) return null;
+    if (campaign.sendAt && campaign.sendAt.getTime() > Date.now() + SCHEDULE_TOLERANCE_MS) {
+      if (!options.onlyDue) await this.schedule(campaign);
+      return null;
+    }
+    const claim = await this.campaigns.update(
+      { id, status: NotificationCampaignStatus.SCHEDULED, deletedAt: IsNull() },
+      { status: NotificationCampaignStatus.SENDING },
+    );
+    if (!claim.affected) return null;
+    try {
+      return await this.sendCampaign(campaign);
+    } catch (error) {
+      await this.campaigns.update(id, { status: NotificationCampaignStatus.FAILED });
+      throw error;
+    }
+  }
+
+  /** The worker's cron job (no queue): sends the scheduled campaigns whose `sendAt` has passed. @returns how many were sent. */
+  async dispatchDueCampaigns(limit = 20): Promise<number> {
+    const due = await this.campaigns.find({
+      select: { id: true },
+      where: { status: NotificationCampaignStatus.SCHEDULED, sendAt: LessThanOrEqual(new Date()) },
+      order: { sendAt: 'ASC' },
+      take: limit,
+    });
+    let sent = 0;
+    for (const { id } of due) {
+      try {
+        if (await this.dispatchCampaign(id, { onlyDue: true })) sent++;
+      } catch (error) {
+        this.logger.error(`Scheduled campaign ${id} failed: ${(error as Error).message}`);
+      }
+    }
+    return sent;
+  }
+
+  /**
+   * Delivers one saved notification again (admin "resend"): marks it unread
+   * and pending, pushes it to the user's devices once more and hands it to the
+   * extra channels. The push result is stored on the row as usual.
+   *
+   * @returns false when the notification does not exist (or was deleted).
+   */
+  async resend(id: string): Promise<boolean> {
+    const row = await this.notifications.createQueryBuilder('n').select(RETRY_COLUMNS).where('n.id = :id', { id }).getOne();
+    if (!row) return false;
+    await this.notifications.update({ id }, { readAt: null, pushStatus: NotificationPushStatus.PENDING, pushError: null });
+    await this.pushAgain([row]);
+    await this.enqueueChannels([row.userId], this.normalize(row));
+    return true;
   }
 
   /** The `notifications.channel` job: one batch of users for one extra channel. Throws, so the queue retries. */
@@ -138,7 +258,7 @@ export class NotificationService {
     return retried;
   }
 
-  private async sendNow(to: string[] | 'all', data: NormalizedPayload, options: SendNotificationOptions): Promise<SendNotificationResult> {
+  private async sendNow(to: NotificationRecipients, data: NormalizedPayload, options: SendNotificationOptions): Promise<SendNotificationResult> {
     const result: SendNotificationResult = { created: 0, pushSent: 0, pushFailed: 0, pushSkipped: 0 };
     for await (const userIds of this.recipients(to, options.platform ?? null)) {
       const rows = await this.saveRows(userIds, data, options);
@@ -313,7 +433,7 @@ export class NotificationService {
   }
 
   /** Recipient ids in batches of {@link BATCH}. */
-  private async *recipients(to: string[] | 'all', platform: string | null): AsyncGenerator<string[]> {
+  private async *recipients(to: NotificationRecipients, platform: string | null): AsyncGenerator<string[]> {
     const query = () => {
       const qb = this.users.createQueryBuilder('u').select('u.id', 'id').orderBy('u.id', 'ASC');
       if (platform) {
@@ -326,10 +446,16 @@ export class NotificationService {
       return qb;
     };
 
-    if (to === 'all') {
+    if (to === 'all' || isTopic(to)) {
       let after: string | null = null;
       for (;;) {
         const qb = query().andWhere('u.isBlocked = false').limit(BATCH);
+        if (isTopic(to)) {
+          qb.andWhere(
+            `EXISTS (SELECT 1 FROM "notification_topics" "t" WHERE "t"."user_id" = "u"."id" AND "t"."topic" = :topic AND "t"."deleted_at" IS NULL)`,
+            { topic: to.topic },
+          );
+        }
         if (after) qb.andWhere('u.id > :after', { after });
         const ids = (await qb.getRawMany<{ id: string }>()).map((r) => r.id);
         if (ids.length) yield ids;

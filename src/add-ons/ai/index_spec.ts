@@ -99,6 +99,15 @@ describe('ai add-on', () => {
       expect(tree.readContent('/libs/common/src/permissions.ts')).toContain("{ resource: 'ai', actions: ['read', 'write'] },");
     });
 
+    it('stats take from/to days and return a zero-filled cost per day, without a new migration', () => {
+      const dto = tree.readContent('/apps/api/src/modules/ai/dto/ai-stats.dto.ts');
+      for (const field of ['from?: string;', 'to?: string;', 'costByDay: AiStatsCostDayDto[];', 'days?: number;']) expect(dto).toContain(field);
+      expect(tree.readContent('/apps/api/src/modules/ai/ai-admin.controller.ts')).toContain('this.service.stats(query)');
+      expect(tree.readContent('/apps/api/src/modules/ai/ai-days.ts')).toContain('export const MAX_RANGE_DAYS = 366;');
+      expect(tree.exists('/apps/api/src/modules/ai/ai-days.spec.ts')).toBeTrue();
+      expect(tree.files.filter((f) => /migrations\/\d{13}-ai-/.test(f)).length).toBe(1);
+    });
+
     it('adds optional env keys (empty API key) with validation', () => {
       const example = tree.readContent('/.env.example');
       for (const line of ['AI_PROVIDER=openrouter', 'AI_TIMEOUT_MS=60000', 'AI_LOG_BODIES=false', 'OPENROUTER_API_KEY=', 'OPENROUTER_MODEL=google/gemini-2.5-flash-lite', 'OPENROUTER_BASE_URL=https://openrouter.ai/api/v1', 'APP_URL=', 'APP_NAME=']) {
@@ -234,6 +243,20 @@ describe('ai add-on', () => {
         expect(example).toContain('\nAI_MONTHLY_TOKENS=500000\n');
         expect(manifest(quota).options).toEqual({ chat: true, quota: true });
         expect(migration(quota, 'ai-chat').ts).toBe(migration(chat, 'ai-chat').ts);
+      });
+
+      it('adds the admin usage route (ai.read) over the quota tables, without a new migration', () => {
+        const dir = '/apps/api/src/modules/ai/quota';
+        const controller = quota.readContent(`${dir}/ai-usage-admin.controller.ts`);
+        expect(controller).toContain("@AdminResource('ai', { read: ['ai.read'] })");
+        expect(controller).toContain("@Get('usage')");
+        expect(controller).not.toContain('@Post');
+        expect(quota.readContent(`${dir}/ai-quota.module.ts`)).toMatch(/controllers: \[AiUsageController, AiAdminQuotaController\]/);
+        expect(quota.readContent(`${dir}/ai-usage-admin.service.ts`)).toContain('this.quota.usage(query.userId)');
+        expect(quota.exists(`${dir}/ai-usage-admin.service.spec.ts`)).toBeTrue();
+        expect(chat.exists(`${dir}/ai-usage-admin.controller.ts`)).toBeFalse();
+        const migrations = (t: UnitTestTree) => t.files.filter((f) => /migrations\/\d{13}-ai-/.test(f)).length;
+        expect(migrations(quota)).toBe(migrations(chat) + 1); // ai-quota only: the usage route reads existing tables
       });
 
       it('installs chat and quota in one run like in two', async () => {
