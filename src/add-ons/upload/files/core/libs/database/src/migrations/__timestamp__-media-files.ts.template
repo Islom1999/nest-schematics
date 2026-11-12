@@ -1,0 +1,40 @@
+import { MigrationInterface, QueryRunner } from 'typeorm';
+
+/** `media_files` (npm run g -- upload). Matches entities/media-file.entity.ts. */
+export class MediaFiles<%= timestamp %> implements MigrationInterface {
+  name = 'MediaFiles<%= timestamp %>';
+
+  public async up(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query(`
+      CREATE TABLE IF NOT EXISTS "media_files" (
+        "id" uuid NOT NULL DEFAULT gen_random_uuid(),
+        "created_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+        "updated_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+        "deleted_at" TIMESTAMP WITH TIME ZONE,
+        "kind" character varying(16) NOT NULL,
+        "usage" character varying(64) NOT NULL DEFAULT 'general',
+        "storage" character varying(16) NOT NULL,
+        "path" character varying(512) NOT NULL,
+        "original_name" character varying(255) NOT NULL,
+        "mime" character varying(127) NOT NULL,
+        "size" bigint NOT NULL,
+        "width" integer,
+        "height" integer,
+        "duration" double precision,
+        "used" boolean NOT NULL DEFAULT false,
+        "owner_type" character varying(64),
+        "owner_id" character varying(64),
+        "uploaded_by_id" character varying(64),
+        "uploaded_by_type" character varying(16),
+        CONSTRAINT "<%= primaryKey %>" PRIMARY KEY ("id")
+      )
+    `);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "<%= deletedAtIndex %>" ON "media_files" ("deleted_at")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_media_files_used_created_at" ON "media_files" ("used", "created_at")`);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "IDX_media_files_owner" ON "media_files" ("owner_type", "owner_id")`);
+  }
+
+  public async down(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query(`DROP TABLE IF EXISTS "media_files"`);
+  }
+}

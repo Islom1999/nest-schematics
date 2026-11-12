@@ -207,3 +207,18 @@ describe('registries', () => {
     expect(permissions).toContain(`{ resource: 'product', actions: ['read', 'write'] },`);
   });
 });
+
+describe('addIgnoreEntries', () => {
+  it('appends missing entries once under a title and skips missing files', async () => {
+    const { addIgnoreEntries } = await import('./ignore');
+    const tree = new HostTree();
+    tree.create('/.gitignore', '/dist\nnode_modules\n');
+    expect(addIgnoreEntries(tree, '.gitignore', 'uploads', ['/uploads', 'node_modules'])).toEqual(['/uploads']);
+    expect(addIgnoreEntries(tree, '.gitignore', 'uploads', ['/uploads'])).toEqual([]);
+    expect(read(tree, '/.gitignore')).toBe('/dist\nnode_modules\n\n# uploads\n/uploads\n');
+    expect(addIgnoreEntries(tree, '.gitignore', 'uploads', ['/tmp'])).toEqual(['/tmp']);
+    expect(read(tree, '/.gitignore')).toBe('/dist\nnode_modules\n\n# uploads\n/uploads\n/tmp\n');
+    expect(addIgnoreEntries(tree, '.dockerignore', 'uploads', ['/uploads'])).toEqual([]);
+    expect(tree.exists('/.dockerignore')).toBeFalse();
+  });
+});
