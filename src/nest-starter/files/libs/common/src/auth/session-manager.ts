@@ -66,6 +66,14 @@ export type RevokeReason =
   | 'blocked'
   | 'deleted';
 
+/** A session that was just revoked. */
+export interface RevokedSession {
+  id: string;
+  ownerId: string;
+}
+
+export type RevokeListener = (sessionIds: string[], sessions: RevokedSession[]) => void | Promise<void>;
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ALGORITHM = 'HS256';
 
@@ -80,10 +88,11 @@ const ALGORITHM = 'HS256';
  *   unknown refresh token of a live session revokes that session (token theft).
  * - At most `limit` active sessions per owner; a new sign-in from the same
  *   `deviceId` replaces that device's previous session.
- * - `onRevoke` listeners are told the ids of revoked sessions (cache eviction).
+ * - `onRevoke` listeners are told the revoked sessions (cache eviction); they
+ *   are awaited, so a shared cache is cleared before the revoke call returns.
  */
 export class SessionManager<S extends AuthSessionBase> {
-  private readonly revokeListeners: ((sessionIds: string[]) => void)[] = [];
+  private readonly revokeListeners: RevokeListener[] = [];
 
   constructor(
     protected readonly repository: Repository<S>,
@@ -91,8 +100,8 @@ export class SessionManager<S extends AuthSessionBase> {
     readonly options: SessionManagerOptions,
   ) {}
 
-  /** Called with the ids of sessions revoked through this manager. */
-  onRevoke(listener: (sessionIds: string[]) => void): void {
+  /** Called with the ids (and owners) of sessions revoked through this manager. */
+  onRevoke(listener: RevokeListener): void {
     this.revokeListeners.push(listener);
   }
 
@@ -256,14 +265,15 @@ export class SessionManager<S extends AuthSessionBase> {
 
   private async revokeWhere(where: Record<string, unknown>, reason: RevokeReason, exceptId?: string): Promise<string[]> {
     const rows = await this.repository.find({
-      select: { id: true } as FindOptionsSelect<S>,
+      select: { id: true, [this.options.ownerKey]: true } as FindOptionsSelect<S>,
       where: this.where({ ...where, revokedAt: IsNull() }),
     });
-    const ids = rows.map((r) => r.id).filter((id) => id !== exceptId);
+    const revoked = rows.filter((r) => r.id !== exceptId).map((r) => ({ id: r.id, ownerId: this.ownerOf(r) }));
+    const ids = revoked.map((r) => r.id);
     if (!ids.length) return [];
     const patch: Record<string, unknown> = { revokedAt: new Date(), revokeReason: reason };
     await this.repository.update(this.where({ id: In(ids) }), patch as QueryDeepPartialEntity<S>);
-    for (const listener of this.revokeListeners) listener(ids);
+    for (const listener of this.revokeListeners) await listener(ids, revoked);
     return ids;
   }
 

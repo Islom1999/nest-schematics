@@ -72,6 +72,21 @@
       "description": "Add notifications + notification_campaigns: NotificationService.send() (save, then FCM push in chunks of 500), --channels telegram,email, client/notifications, admin broadcast and campaigns, push retry in the worker",
       "factory": "./add-ons/notifications/index#notifications",
       "schema": "./add-ons/notifications/schema.json"
+    },
+    "redis": {
+      "description": "Add Redis (ioredis, REDIS_URL): shared CacheStore for session caches and login limits, Redis throttler storage, health check, docker-compose service; in-memory fallback without REDIS_URL",
+      "factory": "./add-ons/redis/index#redis",
+      "schema": "./add-ons/redis/schema.json"
+    },
+    "queue": {
+      "description": "Add BullMQ job queues (needs redis): QueueModule, JobsService.enqueue(name, data, opts) with retries and backoff, @JobHandler(), GET admin/queues; jobs run in apps/worker when installed",
+      "factory": "./add-ons/queue/index#queue",
+      "schema": "./add-ons/queue/schema.json"
+    },
+    "settings": {
+      "description": "Add app_settings: SettingsService.get/set with a short cache, admin/settings CRUD, GET settings/public and maintenance mode (503 on client routes)",
+      "factory": "./add-ons/settings/index#settings",
+      "schema": "./add-ons/settings/schema.json"
     }
   }
 }

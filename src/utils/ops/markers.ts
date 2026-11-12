@@ -27,6 +27,14 @@ export const MARKERS = {
   composeServices: '# @ns:services',
   /** docker-compose.yml, end of `volumes:`. */
   composeVolumes: '# @ns:volumes',
+  /** docker-compose.yml, end of the `api` service `environment:`. */
+  composeApiEnvironment: '# @ns:api-environment',
+  /** apps/api/src/health/health.controller.ts, last constructor parameter (inject indicators). */
+  healthInject: '// @ns:health-inject',
+  /** apps/api/src/health/health.controller.ts, checks of `GET /health`. */
+  healthCheck: '// @ns:health-check',
+  /** apps/api/src/health/health.controller.ts, checks of `GET /health/ready`. */
+  healthReady: '// @ns:health-ready',
 } as const;
 
 /**

@@ -34,6 +34,7 @@ services:
       DB_PASSWORD: ${DB_PASSWORD:-postgres}
       DB_DATABASE: ${DB_DATABASE:-<%= underscore(name) %>}
       DB_SYNCHRONIZE: "false"
+      # @ns:api-environment
     ports:
       - "${PORT:-3000}:3000"
     depends_on:

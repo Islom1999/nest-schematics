@@ -14,6 +14,7 @@ import {
   readManifest,
   recordFeature,
   requireFeatures,
+  setModuleImport,
 } from './index';
 
 const MODULE = `import { Module } from '@nestjs/common';
@@ -63,6 +64,17 @@ describe('ops', () => {
       expect(text).toContain(`import { ThrottlerGuard } from '@nestjs/throttler';`);
       expect(text).toContain(`import { APP_GUARD } from '@nestjs/core';`);
       expect(text.match(/import \{ APP_GUARD \}/g)!.length).toBe(1);
+    });
+
+    it('replaces an existing import expression (setModuleImport) and is a no-op otherwise', () => {
+      addModuleImport(tree, '/api.module.ts', 'QueueModule', '@app/common', 'QueueModule.forRoot()');
+      expect(setModuleImport(tree, '/api.module.ts', 'QueueModule', 'QueueModule.forRoot({ processors: false })')).toBeTrue();
+      expect(setModuleImport(tree, '/api.module.ts', 'QueueModule', 'QueueModule.forRoot({ processors: false })')).toBeFalse();
+      expect(setModuleImport(tree, '/api.module.ts', 'MissingModule', 'MissingModule.forRoot()')).toBeFalse();
+      const text = read(tree, '/api.module.ts');
+      expect(text).toContain('    QueueModule.forRoot({ processors: false }),\n  ],');
+      expect(text).not.toContain('QueueModule.forRoot(),');
+      expect(text).not.toContain('MissingModule');
     });
 
     it('fills an empty array', () => {

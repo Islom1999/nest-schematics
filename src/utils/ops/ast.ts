@@ -198,6 +198,34 @@ export function addToDecoratorArray(
   return true;
 }
 
+/**
+ * Replaces the element whose key (see {@link elementKey}) is `key` in the array
+ * property `property` of `@<decorator>({...})` with `expression`, e.g.
+ * `QueueModule.forRoot()` → `QueueModule.forRoot({ processors: false })`.
+ *
+ * @returns false when there is no such element or it already reads `expression`.
+ */
+export function replaceInDecoratorArray(
+  tree: Tree,
+  path: string,
+  decorator: string,
+  property: string,
+  key: string,
+  expression: string,
+): boolean {
+  const text = readText(tree, path);
+  const object = findDecoratorObject(parse(path, text), decorator);
+  const prop = object && findProperty(object, property);
+  if (!prop || !ts.isArrayLiteralExpression(prop.initializer)) return false;
+  const element = prop.initializer.elements.find((el) => elementKey(el) === key);
+  if (!element || element.getText() === expression) return false;
+  const recorder = tree.beginUpdate(path);
+  recorder.remove(element.getStart(), element.getEnd() - element.getStart());
+  recorder.insertLeft(element.getStart(), expression);
+  tree.commitUpdate(recorder);
+  return true;
+}
+
 function parseExpression(expression: string): ts.Expression {
   const source = parse('expr.ts', `(${expression});`);
   const statement = source.statements[0];

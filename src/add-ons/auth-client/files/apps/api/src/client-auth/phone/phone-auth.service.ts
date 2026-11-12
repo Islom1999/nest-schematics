@@ -1,8 +1,8 @@
-import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { DeviceInfo, LoginAttemptLimiter, normalizePhone, SmsService } from '@app/common';
+import { CACHE_STORE, CacheStore, DeviceInfo, LoginAttemptLimiter, normalizePhone, SmsService } from '@app/common';
 import { User } from '@app/database';
 import { ClientAuthService } from '../client-auth.service';
 import { isUniqueViolation } from '../client-auth.types';
@@ -22,8 +22,8 @@ const DEFAULT_TEXT = 'Your verification code: {code}';
  */
 @Injectable()
 export class PhoneAuthService {
-  private readonly sendsPerIp = new LoginAttemptLimiter(20, 60 * 60_000);
-  private readonly failuresPerIp = new LoginAttemptLimiter(10, 15 * 60_000);
+  private readonly sendsPerIp: LoginAttemptLimiter;
+  private readonly failuresPerIp: LoginAttemptLimiter;
   private readonly text: string;
 
   constructor(
@@ -32,16 +32,21 @@ export class PhoneAuthService {
     private readonly sms: SmsService,
     private readonly auth: ClientAuthService,
     config: ConfigService,
+    @Inject(CACHE_STORE) cache: CacheStore,
   ) {
+    // Counted in Redis (all instances) with the redis add-on, else in memory.
+    const store = cache.shared ? cache : undefined;
+    this.sendsPerIp = new LoginAttemptLimiter(20, 60 * 60_000, store, 'user-otp-sends');
+    this.failuresPerIp = new LoginAttemptLimiter(10, 15 * 60_000, store, 'user-otp-failures');
     const text = config.get<string>('USER_OTP_SMS_TEXT')?.trim() || DEFAULT_TEXT;
     this.text = text.includes('{code}') ? text : `${text} {code}`;
   }
 
   async sendCode(rawPhone: string, device: DeviceInfo): Promise<PhoneCodeSentDto> {
     const phone = this.phone(rawPhone);
-    this.sendsPerIp.assertAllowed(device.ip);
+    await this.sendsPerIp.assertAllowed(device.ip);
     const code = await this.otp.issue('phone_sign_in', phone, device.ip, PHONE_OTP_POLICY);
-    this.sendsPerIp.fail(device.ip);
+    await this.sendsPerIp.fail(device.ip);
     await this.sms.send(phone, this.text.replace('{code}', code));
     return {
       success: true,
@@ -52,9 +57,9 @@ export class PhoneAuthService {
 
   async verify(rawPhone: string, code: string, device: DeviceInfo): Promise<ClientAuthResponseDto> {
     const phone = this.phone(rawPhone);
-    this.failuresPerIp.assertAllowed(device.ip);
+    await this.failuresPerIp.assertAllowed(device.ip);
     if (!(await this.otp.verify('phone_sign_in', phone, code, PHONE_OTP_POLICY))) {
-      this.failuresPerIp.fail(device.ip);
+      await this.failuresPerIp.fail(device.ip);
       throw new UnauthorizedException('Invalid or expired code');
     }
 

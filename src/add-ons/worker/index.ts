@@ -8,6 +8,7 @@ import {
   scheduleInstall,
 } from '../../utils/ops';
 import { hasApiLogs, registerApiLogCleanup } from '../api-logs/cleanup';
+import { hasQueue, wireQueueProcessors } from '../queue/wiring';
 import { hasUpload, registerMediaCleanup } from '../upload/cleanup';
 import { hasUploadTus, registerTusCleanup } from '../upload-tus/cleanup';
 import { hasNotifications, registerNotificationRetry } from '../notifications/retry';
@@ -28,6 +29,8 @@ const DEFERRED_JOBS: DeferredJob[] = [
   { installed: hasUpload, register: registerMediaCleanup },
   { installed: hasUploadTus, register: registerTusCleanup },
   { installed: hasNotifications, register: registerNotificationRetry },
+  // queue: jobs move from the api to the worker
+  { installed: hasQueue, register: wireQueueProcessors },
 ];
 
 /**

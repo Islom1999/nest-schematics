@@ -38,7 +38,7 @@ export class UsersService extends BaseCrudService<User> {
     await this.getRaw(id);
     await this.repository.update(id, { isBlocked });
     if (isBlocked) await this.sessions.revokeAll(id, 'blocked');
-    this.auth.invalidateUser(id);
+    await this.auth.invalidateUser(id);
     return this.findOne(id);
   }
 

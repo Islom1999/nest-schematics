@@ -1,6 +1,7 @@
 export * from './auth';
 export * from './base/base-crud.controller';
 export * from './base/base-crud.service';
+export * from './cache';
 export * from './config/env.validation';
 export * from './config/throttler.config';
 export * from './decorators/admin-access.decorator';

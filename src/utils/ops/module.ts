@@ -1,5 +1,5 @@
 import { SchematicsException, Tree } from '@angular-devkit/schematics';
-import { addNamedImports, addToDecoratorArray, NamedImport } from './ast';
+import { addNamedImports, addToDecoratorArray, NamedImport, replaceInDecoratorArray } from './ast';
 
 type ModuleArray = 'imports' | 'providers' | 'controllers' | 'exports';
 
@@ -33,6 +33,17 @@ export function addModuleImport(
     expression,
     imports: [{ name: className, from: importPath }],
   });
+}
+
+/**
+ * Rewrites an existing `@Module({ imports })` entry of `className` (e.g. its
+ * `forRoot()` options) to `expression`.
+ *
+ * @returns false when the module is not imported or already reads `expression`.
+ */
+export function setModuleImport(tree: Tree, modulePath: string, className: string, expression: string): boolean {
+  if (!tree.exists(modulePath)) throw new SchematicsException(`File not found: ${modulePath}`);
+  return replaceInDecoratorArray(tree, modulePath, 'Module', 'imports', className, expression);
 }
 
 export function addModuleProvider(tree: Tree, modulePath: string, entry: ModuleEntry): boolean {
