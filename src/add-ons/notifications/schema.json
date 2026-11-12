@@ -1,0 +1,28 @@
+{
+  "$schema": "http://json-schema.org/schema",
+  "$id": "NotificationsAddonSchema",
+  "title": "Notifications (in-app, FCM push, telegram, email)",
+  "type": "object",
+  "properties": {
+    "channels": {
+      "type": "string",
+      "description": "Comma-separated channels: fcm (push, always installed), telegram (needs auth-client --methods telegram), email (needs the mail add-on and email/Google/Apple sign-in). Default fcm; re-run to add more",
+      "default": "fcm"
+    },
+    "force": {
+      "type": "boolean",
+      "description": "Overwrite generated files that you have edited",
+      "default": false
+    },
+    "skipInstall": {
+      "type": "boolean",
+      "description": "Do not run npm install",
+      "default": false
+    },
+    "root": {
+      "type": "string",
+      "description": "Project directory relative to the current directory (used by `new --apps`)",
+      "default": ""
+    }
+  }
+}

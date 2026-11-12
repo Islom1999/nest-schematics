@@ -67,6 +67,11 @@
       "description": "Add AiService (OpenRouter / Gemini over fetch: generate, stream, vision, json, image), ai_logs with tokens and cost, admin stats; --chat: client SSE chat; --quota: per-user limits",
       "factory": "./add-ons/ai/index#ai",
       "schema": "./add-ons/ai/schema.json"
+    },
+    "notifications": {
+      "description": "Add notifications + notification_campaigns: NotificationService.send() (save, then FCM push in chunks of 500), --channels telegram,email, client/notifications, admin broadcast and campaigns, push retry in the worker",
+      "factory": "./add-ons/notifications/index#notifications",
+      "schema": "./add-ons/notifications/schema.json"
     }
   }
 }
