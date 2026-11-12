@@ -172,6 +172,14 @@ describe('mergeSafe', () => {
     result = await runner.runSchematic('safe', { force: true }, result);
     expect(read(result, '/edited.txt')).toBe('template\n');
   });
+
+  it('only creates createOnly files, even with force', async () => {
+    const tree = new HostTree();
+    tree.create('/edited.txt', 'extended at a marker\n');
+    const result = await runner.runSchematic('safe', { force: true, createOnly: ['edited.txt', 'new.txt'] }, tree);
+    expect(read(result, '/edited.txt')).toBe('extended at a marker\n');
+    expect(read(result, '/new.txt')).toBe('new\n');
+  });
 });
 
 describe('starter tree helper', () => {
