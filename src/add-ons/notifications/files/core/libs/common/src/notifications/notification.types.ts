@@ -12,6 +12,9 @@ export interface NotificationPayload {
   meta?: Record<string, unknown> | null;
 }
 
+/** Who `NotificationService.send()` goes to: user ids, every user, or the subscribers of a topic (`notification_topics`). */
+export type NotificationRecipients = string[] | 'all' | { topic: string };
+
 export interface SendNotificationOptions {
   /** Admin broadcast the rows belong to. */
   campaignId?: string | null;
@@ -79,10 +82,12 @@ export const NOTIFICATION_QUEUE = 'notifications';
 export const NOTIFICATION_JOB = {
   /** One batch of users for one extra channel (telegram, email). */
   channel: 'notifications.channel',
-  /** `send('all', ...)`: saves and pushes to every user in batches. */
+  /** `send('all' | { topic }, ...)`: saves and pushes to every recipient in batches. */
   broadcast: 'notifications.broadcast',
   /** Pushes failed rows again; fails while some still fail, so the queue retries with backoff. */
   pushRetry: 'notifications.push-retry',
+  /** A scheduled campaign (`sendAt`): delayed until then. */
+  scheduled: 'notifications.scheduled',
 } as const;
 
 export interface ChannelJobData {
@@ -94,6 +99,12 @@ export interface ChannelJobData {
 export interface BroadcastJobData {
   payload: NotificationPayload;
   options: SendNotificationOptions;
+  /** Set for a topic broadcast; without it the job goes to every user. */
+  topic?: string;
+}
+
+export interface ScheduledJobData {
+  campaignId: string;
 }
 
 export interface PushRetryJobData {

@@ -7,6 +7,7 @@ const LIB = '/libs/common/src/notifications';
 const CHANNELS = `${LIB}/notification-channels.ts`;
 const ROUTES = '/apps/api/src/modules/notifications';
 const JOB = '/apps/worker/src/jobs/notification-push-retry.job.ts';
+const SCHEDULED_JOB = '/apps/worker/src/jobs/notification-scheduled.job.ts';
 const WORKER_MODULE = '/apps/worker/src/worker.module.ts';
 
 interface RunResult {
@@ -85,6 +86,47 @@ describe('notifications add-on', () => {
       expect(tree.readContent('/libs/database/src/migrations/index.ts')).toContain(`Notifications${ts},`);
     });
 
+    it('adds topic subscriptions and scheduled campaigns in a migration of their own, matching the entities', () => {
+      const topics = tree.readContent('/libs/database/src/entities/notification-topic.entity.ts');
+      expect(tree.readContent('/libs/database/src/entities/index.ts')).toContain("export * from './notification-topic.entity';");
+      expect(topics).toContain("@Index('UQ_notification_topics_user_id_topic', ['userId', 'topic'], { unique: true })");
+      expect(topics).toContain("foreignKeyConstraintName: 'FK_notification_topics_user_id'");
+      const campaign = tree.readContent('/libs/database/src/entities/notification-campaign.entity.ts');
+      for (const part of ["TOPIC = 'topic'", 'sendAt: Date | null;', 'status: NotificationCampaignStatus;', 'meta: Record<string, unknown> | null;']) {
+        expect(campaign).toContain(part);
+      }
+
+      const files = tree.files.filter((f) => /^\/libs\/database\/src\/migrations\/\d{13}-notifications-topics-schedule\.ts$/.test(f));
+      expect(files.length).toBe(1);
+      const migration = tree.readContent(files[0]);
+      const ts = /(\d{13})/.exec(files[0])![1];
+      const core = /(\d{13})/.exec(migrationFile(tree))![1];
+      expect(Number(ts)).toBeGreaterThan(Number(core));
+      expect(migration).toContain(`export class NotificationsTopicsSchedule${ts} implements MigrationInterface`);
+      expect(migration).not.toContain('<%');
+      expect(migration).toMatch(/CONSTRAINT "PK_[0-9a-f]{27}" PRIMARY KEY/);
+      expect(migration).toContain('CREATE UNIQUE INDEX "UQ_notification_topics_user_id_topic" ON "notification_topics" ("user_id", "topic")');
+      expect(migration).toContain(`ADD "status" character varying(16) NOT NULL DEFAULT 'sent'`);
+      expect(migration).toContain('ADD "send_at" TIMESTAMP WITH TIME ZONE');
+      expect(migration).toContain('CREATE INDEX "IDX_notification_campaigns_status_send_at" ON "notification_campaigns" ("status", "send_at")');
+      expect(tree.readContent('/libs/database/src/migrations/index.ts')).toContain(`NotificationsTopicsSchedule${ts},`);
+    });
+
+    it('adds resend, delete, cancel, topic subscriptions and the push devices route', () => {
+      const admin = tree.readContent(`${ROUTES}/admin-notifications.controller.ts`);
+      for (const route of ["@Post(':id/resend')", "@Delete(':id')", "@Delete('campaigns/:id')"]) expect(admin).toContain(route);
+      expect(admin.match(/@AdminAccess\('write'\)/g)?.length).toBe(4);
+      const client = tree.readContent(`${ROUTES}/client-notifications.controller.ts`);
+      for (const route of ["@Get('topics')", "@Put('topics/:topic')", "@Delete('topics/:topic')"]) expect(client).toContain(route);
+      const push = tree.readContent(`${ROUTES}/users-push.controller.ts`);
+      expect(push).toContain("@AdminResource('users', { read: ['notification.read'] })");
+      expect(push).toContain("@Get(':id/push-devices')");
+      expect(tree.readContent(`${ROUTES}/push-devices.service.ts`)).toContain('this.sessions.activePushTokens([userId])');
+      expect(tree.readContent(`${ROUTES}/notifications.module.ts`)).toContain('UsersPushController');
+      expect(tree.readContent(`${ROUTES}/dto/notification.dto.ts`)).toContain('sendAt?: string;');
+      for (const spec of ['notification-admin.service.spec.ts', 'push-token-mask.spec.ts']) expect(tree.exists(`${ROUTES}/${spec}`)).withContext(spec).toBeTrue();
+    });
+
     it('adds the core, the routes and the api module import', () => {
       for (const f of ['notification.service.ts', 'fcm.sender.ts', 'notification.module.ts', 'push-token-store.ts', 'notifications.spec.ts']) {
         expect(tree.exists(`${LIB}/${f}`)).withContext(f).toBeTrue();
@@ -120,6 +162,7 @@ describe('notifications add-on', () => {
       expect(manifest(tree)['notifications'].options).toEqual({ channels: ['fcm'] });
       expect(tree.exists(JOB)).toBeFalse();
       expect(installed.logs.some((l) => l.message.includes('npm run g -- worker'))).toBeTrue();
+      expect(installed.logs.some((l) => l.message.includes('scheduled campaigns (sendAt) are not sent'))).toBeTrue();
     });
 
     it('changes nothing when run again', async () => {
@@ -180,6 +223,9 @@ describe('notifications add-on', () => {
         expect(module).toContain("import { NotificationModule } from '@app/common/notifications';");
         expect(module).toContain('NotificationPushRetryJob,');
         expect(tree.readContent(JOB)).toContain('retryFailedPushes()');
+        expect(module).toContain('NotificationScheduledJob,');
+        expect(module).toContain("import { NotificationScheduledJob } from './jobs/notification-scheduled.job';");
+        expect(tree.readContent(SCHEDULED_JOB)).toContain('dispatchDueCampaigns()');
       }
       expect(workerFirst.readContent(WORKER_MODULE)).toEqual(workerLast.readContent(WORKER_MODULE));
 
@@ -206,10 +252,12 @@ describe('notifications add-on', () => {
 
     function expectJobsWired(tree: UnitTestTree, worker: boolean): void {
       const jobs = tree.readContent(JOBS_FILE);
-      for (const name of ['notifications.channel', 'notifications.broadcast', 'notifications.push-retry']) {
+      for (const name of ['notifications.channel', 'notifications.broadcast', 'notifications.push-retry', 'notifications.scheduled']) {
         expect(jobs).withContext(name).not.toContain(`'${name}'`); // names come from NOTIFICATION_JOB
       }
       expect(jobs).toContain('@JobHandler(NOTIFICATION_JOB.channel');
+      expect(jobs).toContain('@JobHandler(NOTIFICATION_JOB.scheduled');
+      expect(jobs).toContain('runBroadcast(data.payload, data.options, data.topic)');
       expect(jobs).toContain('{ provide: NOTIFICATION_JOBS, useExisting: JobsService }');
       expect(tree.readContent(`${LIB}/notification.types.ts`)).toContain("channel: 'notifications.channel'");
       expect(tree.readContent(`${LIB}/index.ts`)).not.toContain('notification-jobs');
@@ -223,7 +271,9 @@ describe('notifications add-on', () => {
       expect(module).toContain('NotificationModule.forRoot(),');
       expect(module).not.toContain('channels: false');
       expect(module).not.toContain('NotificationPushRetryJob');
+      expect(module).not.toContain('NotificationScheduledJob');
       expect(tree.exists(JOB)).toBeFalse();
+      expect(tree.exists(SCHEDULED_JOB)).toBeFalse();
     }
 
     const orders: { name: string; order: string[]; worker: boolean }[] = [
@@ -277,10 +327,22 @@ describe('notifications add-on', () => {
       expect(snapshot((await run(runner, 'notifications', { channels: 'email' }, tree)).tree)).toEqual(snapshot(tree));
     });
 
+    it('replaces a jobs module from before scheduled campaigns', async () => {
+      const tree = await install(['notifications', 'queue']);
+      const old = tree.readContent(JOBS_FILE).replace(/\n {2}\/\*\* A campaign with[\s\S]*?\n {2}\}\n/, '\n').replace('@JobHandler(NOTIFICATION_JOB.scheduled', '@Removed(');
+      const stale = new UnitTestTree(tree.branch());
+      stale.overwrite(JOBS_FILE, old);
+      expect(stale.readContent(JOBS_FILE)).not.toContain('NOTIFICATION_JOB.scheduled');
+      const again = (await run(runner, 'notifications', {}, stale)).tree;
+      expect(again.readContent(JOBS_FILE)).toContain('@JobHandler(NOTIFICATION_JOB.scheduled');
+      expect(again.readContent(JOBS_FILE)).toEqual(tree.readContent(JOBS_FILE));
+    });
+
     it('changes nothing without the queue: no jobs file, the cron retry job stays', async () => {
       const tree = await install(['notifications', 'worker']);
       expect(tree.exists(JOBS_FILE)).toBeFalse();
       expect(tree.readContent(WORKER_MODULE)).toContain('NotificationPushRetryJob,');
+      expect(tree.readContent(WORKER_MODULE)).toContain('NotificationScheduledJob,');
       expect(tree.readContent(WORKER_MODULE)).toContain('NotificationModule.forRoot({ channels: false })');
       expect(tree.readContent(API_MODULE)).not.toContain('NotificationJobsModule');
     });

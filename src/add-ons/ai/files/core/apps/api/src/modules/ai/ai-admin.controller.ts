@@ -20,10 +20,10 @@ export class AiAdminController {
 
   @AdminAccess('read')
   @Get('stats')
-  @ApiOperation({ summary: 'Totals, usage per day and per model, and the top users for the last N days' })
+  @ApiOperation({ summary: 'Totals, usage and cost per day, usage per model and the top users for the last N days, or for the days from..to' })
   @ApiOkResponse({ type: AiStatsDto })
   stats(@Query() query: AiStatsQueryDto) {
-    return this.service.stats(query.days ?? 30, query.top ?? 10);
+    return this.service.stats(query);
   }
 
   @AdminAccess('read')

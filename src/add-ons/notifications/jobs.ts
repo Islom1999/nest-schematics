@@ -1,5 +1,6 @@
 import { logging } from '@angular-devkit/core';
 import { Tree } from '@angular-devkit/schematics';
+import { readText } from '../../utils/ops';
 import { hasQueue, registerJobHandlers } from '../queue/wiring';
 import { hasNotifications, registerNotificationRetry } from './retry';
 
@@ -23,6 +24,7 @@ import {
   NOTIFICATION_JOBS,
   NOTIFICATION_QUEUE,
   PushRetryJobData,
+  ScheduledJobData,
 } from './notification.types';
 
 /**
@@ -40,10 +42,16 @@ export class NotificationJobs {
     return this.notifications.deliverChannel(data.channel, data.userIds, data.payload);
   }
 
-  /** \`send('all', ...)\`: every user in batches, then the campaign totals. Not retried: it would save the rows twice. */
+  /** \`send('all', ...)\` or \`send({ topic }, ...)\`: every recipient in batches, then the campaign totals. Not retried: it would save the rows twice. */
   @JobHandler(NOTIFICATION_JOB.broadcast, { queue: NOTIFICATION_QUEUE })
   async broadcast(data: BroadcastJobData): Promise<void> {
-    await this.notifications.runBroadcast(data.payload, data.options);
+    await this.notifications.runBroadcast(data.payload, data.options, data.topic);
+  }
+
+  /** A campaign with \`sendAt\`, delayed until then (admin \`broadcast\` with \`sendAt\`). Not retried: it would save the rows twice. */
+  @JobHandler(NOTIFICATION_JOB.scheduled, { queue: NOTIFICATION_QUEUE })
+  async scheduled(data: ScheduledJobData): Promise<void> {
+    await this.notifications.dispatchCampaign(data.campaignId);
   }
 
   /** Failed pushes again; throws while some still fail, so the queue retries with backoff (NOTIFICATION_PUSH_MAX_ATTEMPTS). */
@@ -76,7 +84,9 @@ function prefixed(root: string, path: string): string {
 export function registerNotificationJobs(tree: Tree, logger: logging.LoggerApi, root = ''): boolean {
   if (!hasNotifications(tree, root) || !hasQueue(tree, root)) return false;
   const path = prefixed(root, JOBS_MODULE_FILE);
+  // An earlier install lacks the scheduled handler: the file is generated, so it is replaced.
   if (!tree.exists(path)) tree.create(path, JOBS_MODULE);
+  else if (!readText(tree, path).includes('NOTIFICATION_JOB.scheduled')) tree.overwrite(path, JOBS_MODULE);
   registerJobHandlers(tree, 'NotificationJobsModule', JOBS_MODULE_FROM, root);
   registerNotificationRetry(tree, logger, root);
   return true;

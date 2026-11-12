@@ -1,9 +1,15 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { IsNull, Repository } from 'typeorm';
 import { PaginatedResult, runTableQuery, TableQueryDto } from '@app/common';
 import { NotificationService } from '@app/common/notifications';
-import { Notification, NotificationCampaign, NotificationPushStatus, NotificationTarget } from '@app/database';
+import {
+  Notification,
+  NotificationCampaign,
+  NotificationCampaignStatus,
+  NotificationPushStatus,
+  NotificationTarget,
+} from '@app/database';
 import { BroadcastNotificationDto, NotificationCampaignDetailDto, NotificationTableQueryDto } from './dto/notification.dto';
 
 /** Admin side (`admin/notifications`): broadcasts, campaign history, every notification. */
@@ -19,15 +25,21 @@ export class NotificationAdminService {
    * Saves the campaign, then a notification per recipient, pushes them and
    * stores the totals (`sentCount` = notifications created, `failedCount` =
    * pushes that failed on the first attempt). With the queue add-on a
-   * broadcast to everyone is a job, so the totals arrive when it finishes.
+   * broadcast to everyone or to a topic is a job, so the totals arrive when it
+   * finishes. With `sendAt` it only saves the campaign (status `scheduled`):
+   * a delayed job (queue) or the worker's cron job sends it then.
    */
   async broadcast(dto: BroadcastNotificationDto, adminId: string | null): Promise<NotificationCampaign> {
+    const sendAt = dto.sendAt ? new Date(dto.sendAt) : null;
+    if (sendAt && sendAt.getTime() <= Date.now()) throw new BadRequestException('sendAt must be in the future');
     const filters =
       dto.target === NotificationTarget.USERS
         ? { userIds: [...new Set(dto.userIds ?? [])] }
         : dto.target === NotificationTarget.PLATFORM
           ? { platform: dto.platform }
-          : null;
+          : dto.target === NotificationTarget.TOPIC
+            ? { topic: dto.topic }
+            : null;
     const campaign = await this.campaigns.save(
       this.campaigns.create({
         target: dto.target,
@@ -37,21 +49,49 @@ export class NotificationAdminService {
         body: dto.body ?? '',
         link: dto.link || null,
         image: dto.image || null,
+        meta: dto.meta ?? null,
+        status: sendAt ? NotificationCampaignStatus.SCHEDULED : NotificationCampaignStatus.SENT,
+        sendAt,
         createdById: adminId,
       }),
     );
-    const result = await this.sender.send(
-      dto.target === NotificationTarget.USERS ? (filters?.userIds ?? []) : 'all',
-      { type: campaign.type, title: dto.title, body: dto.body, link: dto.link, image: dto.image, meta: dto.meta },
-      { campaignId: campaign.id, platform: dto.target === NotificationTarget.PLATFORM ? (dto.platform ?? null) : null },
-    );
+    if (sendAt) {
+      try {
+        await this.sender.schedule(campaign);
+      } catch (error) {
+        // Nothing would ever send it: do not leave a campaign that looks scheduled.
+        await this.campaigns.softDelete(campaign.id);
+        throw new ServiceUnavailableException(`Could not schedule the campaign: ${(error as Error).message}`);
+      }
+      return campaign;
+    }
+    const result = await this.sender.sendCampaign(campaign);
     // A queued broadcast (queue add-on) stores its own totals when the job is done.
     if (!result.queued) {
       campaign.sentCount = result.created;
       campaign.failedCount = result.pushFailed;
-      await this.campaigns.update(campaign.id, { sentCount: campaign.sentCount, failedCount: campaign.failedCount });
     }
     return campaign;
+  }
+
+  /** Delivers one notification again (push and extra channels); it becomes unread and pending first. */
+  async resend(id: string): Promise<Notification> {
+    if (!(await this.sender.resend(id))) throw new NotFoundException('Notification not found');
+    return this.notifications.findOneOrFail({ where: { id } });
+  }
+
+  /** Soft delete: the notification disappears from the user's inbox and the admin table. */
+  async remove(id: string): Promise<void> {
+    const result = await this.notifications.softDelete({ id, deletedAt: IsNull() });
+    if (!result.affected) throw new NotFoundException('Notification not found');
+  }
+
+  /** Soft delete of a campaign that is still `scheduled`, so it never goes out. */
+  async cancelCampaign(id: string): Promise<void> {
+    const result = await this.campaigns.softDelete({ id, status: NotificationCampaignStatus.SCHEDULED, deletedAt: IsNull() });
+    if (result.affected) return;
+    if (!(await this.campaigns.exists({ where: { id } }))) throw new NotFoundException('Campaign not found');
+    throw new ConflictException('Only a scheduled campaign can be cancelled');
   }
 
   campaignsPage(query: TableQueryDto): Promise<PaginatedResult<NotificationCampaign>> {
