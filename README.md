@@ -184,6 +184,41 @@ OpenAPI extensions for the frontend (on the entity, the create DTO and the query
 'x-file': { kind: 'image', multiple: false }
 ```
 
+## Add-on'lar
+
+Add-ons are installed into a generated project: `npm run g -- <add-on> [options]` (the `add` word is optional; `--dry-run`, `--force` and `--help` work too). Every add-on is idempotent: a second run changes nothing. Installed add-ons and their options are recorded in `nest-schematics.json`, and an add-on with a dependency refuses to run until it is installed.
+
+| Add-on | Command | Description | Needs |
+|---|---|---|---|
+| `seed` | `npm run g -- seed <name>` | A seed file in `libs/database/src/seeds`, registered for `npm run seed -- <name>` | - |
+| `openapi-client` | `npm run g -- openapi-client --name admin --doc admin --generator typescript-angular --target <dir>` | openapi-generator client target (`typescript-angular`, `dart-dio`, `typescript-fetch`): `openapitools.json` and `api:generate` scripts | - |
+| `worker` | `npm run g -- worker` | `apps/worker`: cron jobs on `@nestjs/schedule`; other add-ons register their jobs in it | - |
+| `bot` | `npm run g -- bot` | `apps/bot`: Telegram bot on telegraf (`BOT_TOKEN`, empty = disabled) | - |
+| `api-logs` | `npm run g -- api-logs` | `server_api_logs`: global request log interceptor, secret masking, `x-request-id`, `@LogPayment()`, `logCron()`, admin routes and retention | - |
+| `sms` | `npm run g -- sms <eskiz\|log>` | `SmsModule` / `SmsService.send(phone, text)` in `libs/common/src/sms` | - |
+| `mail` | `npm run g -- mail <resend\|smtp\|log>` | `MailModule` / `MailService.send({ to, subject, html, text })` and templates in `libs/common/src/mail` | - |
+| `auth-client` | `npm run g -- auth-client --methods phone,email,google,apple,telegram` | Client (app user) auth: `users`, sessions, `UserGuard`, `@CurrentUser()`, `client/auth/*` and `admin/users` | `sms` for `phone`, `mail` for `email` |
+| `redis` | `npm run g -- redis` | Redis (`ioredis`, `REDIS_URL`): shared `CacheStore` for session caches and login limits, Redis throttler storage, health check, docker-compose service; in-memory fallback without `REDIS_URL` | - |
+| `queue` | `npm run g -- queue` | BullMQ job queues: `QueueModule`, `JobsService.enqueue(name, data, opts)` with retries and backoff, `@JobHandler()`, `GET admin/queues`; jobs run in `apps/worker` when installed | `redis` |
+| `settings` | `npm run g -- settings` | `app_settings`: `SettingsService.get/set` with a short cache, `admin/settings` CRUD, `GET settings/public` and maintenance mode (503 on client routes) | - |
+| `upload` | `npm run g -- upload` | `media_files` uploads: local or S3/MinIO storage, type/size checks, `admin/files` routes, public `files/:id` with ETag and Range, optional thumbnails, orphan cleanup | - |
+| `upload-tus` | `npm run g -- upload-tus --engine tusd\|node` | Resumable (tus) uploads on top of `upload`: `tusd` (docker service + hooks, default) or `node` (`@tus/server` in the api); token and limit checks on create, magic-byte check and `media_files` row on finish, worker cleanup | `upload` |
+| `ai` | `npm run g -- ai [--chat] [--quota]` | `AiService` (OpenRouter / Gemini over fetch: generate, stream, vision, json, image), `ai_logs` with tokens and cost, admin stats; `--chat`: client SSE chat; `--quota`: per-user limits | `auth-client` for `--chat` |
+| `notifications` | `npm run g -- notifications [--channels telegram,email]` | `notifications` + `notification_campaigns`: `NotificationService.send()` (save, then FCM push in chunks of 500), `client/notifications`, admin broadcast and campaigns, push retry in the worker; runs on BullMQ when `queue` is installed | `auth-client`; `mail` for `--channels email` |
+| `payment` | `npm run g -- payment <payme\|click\|uzum\|paynet\|inpay> [--mode wallet\|order\|both]` | Invoices, a strict state machine with idempotent webhooks, client checkout, `admin/payments`, wallets with a locked ledger | `auth-client` |
+
+Payment providers: `payme`, `click`, `uzum`, `paynet` and `inpay`. Run the add-on again with another provider to add it next to the first.
+
+Known limitations: Redis and BullMQ were tested with mocks only, `tusd` was not verified against Docker, and the Click, Uzum, Paynet and inPAY protocol details were written from memory; check them against the provider docs before going live.
+
+## O'rnatish tartibi
+
+Add-ons are order-independent: install them in any order. An add-on that needs another one stops with a message naming the missing add-on and the command to run, then you run it and repeat. Add-ons that work together adapt to whichever is installed: for example `queue` moves `notifications` work onto BullMQ jobs whether `notifications` came first or second.
+
+## Environment kalitlari
+
+Every add-on appends its keys to `.env.example` of the generated project (and to `.env` and `env.validation.ts` when they exist), grouped by add-on, with defaults and comments. Copy missing keys from `.env.example` and fill in the secrets (`REDIS_URL`, provider tokens, `BOT_TOKEN` and so on); a key left empty usually disables that integration.
+
 ## API kontrakti
 
 Every CRUD resource exposes these endpoints, which match the frontend `BaseCrudService`:
