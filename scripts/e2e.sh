@@ -105,7 +105,7 @@ npm run build
 if has_script lint; then log "Lint"; npm run lint; fi
 if has_script test; then log "Unit tests"; npm test -- --passWithNoTests; fi
 if has_script migration:run; then
-  if [ -d libs/database/src/migrations ] && ls libs/database/src/migrations/*.ts >/dev/null 2>&1; then
+  if ls libs/database/src/migrations/*.ts 2>/dev/null | grep -qv '/index\.ts$'; then
     log "Migrations"; npm run migration:run
   fi
 fi

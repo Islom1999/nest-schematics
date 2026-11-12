@@ -184,3 +184,26 @@ describe('starter tree helper', () => {
     expect(tree.exists(project.apiModule)).toBeTrue();
   });
 });
+
+describe('registries', () => {
+  it('registers migrations, seeds and permissions once', async () => {
+    const { createStarterTree } = await import('../../testing/starter-tree');
+    const { addMigration, addSeed, addPermissions } = await import('./registries');
+    const tree = await createStarterTree();
+    for (let i = 0; i < 2; i++) {
+      addMigration(tree, 'CreateProduct1700000000000', 'libs/database/src/migrations/1700000000000-create-product');
+      addSeed(tree, 'productSeeder', 'libs/database/src/seeds/product.seed');
+      addPermissions(tree, 'product');
+    }
+    const migrations = read(tree, '/libs/database/src/migrations/index.ts');
+    expect(migrations).toContain(`import { CreateProduct1700000000000 } from './1700000000000-create-product';`);
+    expect(migrations).toContain('  CreateProduct1700000000000,\n  // @ns:migrations');
+    expect(migrations.match(/CreateProduct1700000000000,/g)!.length).toBe(1);
+    const seeds = read(tree, '/libs/database/src/seeds/index.ts');
+    expect(seeds).toContain(`import { productSeeder } from './product.seed';`);
+    expect(seeds.match(/productSeeder,/g)!.length).toBe(1);
+    const permissions = read(tree, '/libs/common/src/permissions.ts');
+    expect(permissions.match(/resource: 'product'/g)!.length).toBe(1);
+    expect(permissions).toContain(`{ resource: 'product', actions: ['read', 'write'] },`);
+  });
+});

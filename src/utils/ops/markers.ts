@@ -13,6 +13,12 @@ export const MARKERS = {
   afterListen: '// @ns:after-listen',
   /** libs/common/src/config/env.validation.ts, last line inside the class. */
   env: '// @ns:env',
+  /** libs/database/src/migrations/index.ts, inside the array. */
+  migrations: '// @ns:migrations',
+  /** libs/database/src/seeds/index.ts, inside the array. */
+  seeds: '// @ns:seeds',
+  /** libs/common/src/permissions.ts, inside PERMISSION_CATALOG. */
+  permissions: '// @ns:permissions',
   /** docker-compose.yml, end of `services:`. */
   composeServices: '# @ns:services',
   /** docker-compose.yml, end of `volumes:`. */

@@ -8,3 +8,4 @@ export * from './package-json';
 export * from './project';
 export * from './text';
 export * from './write-safe';
+export * from './registries';
