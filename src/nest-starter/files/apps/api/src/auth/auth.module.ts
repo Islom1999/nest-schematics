@@ -1,30 +1,41 @@
 import { Global, Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { Admin, AdminRole, AdminSession } from '@app/database';
+import { AdminBootstrapService } from './admin-bootstrap.service';
 import { AdminGuard } from './admin.guard';
+import { AdminSessionsService } from './admin-sessions.service';
+import { AdminsController } from './admins/admins.controller';
+import { AdminsService } from './admins/admins.service';
+import { ADMIN_AUTH_OPTIONS, adminAuthOptions } from './auth.config';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { PermissionsController } from './roles/permissions.controller';
+import { RolesController } from './roles/roles.controller';
+import { RolesService } from './roles/roles.service';
 
 /**
- * Global so every feature module can use `@AdminResource` (AdminGuard)
- * without importing AuthModule.
+ * Admin auth: sign-in, sessions (devices) with refresh rotation, AdminGuard,
+ * and admin/role management. Global so every feature module can use
+ * `@AdminResource` (AdminGuard) without importing it.
+ *
+ * Secrets are passed per token kind (access/refresh), so JwtModule has no
+ * default secret: a token can never be signed with the wrong one.
  */
 @Global()
 @Module({
-  imports: [
-    JwtModule.registerAsync({
-      inject: [ConfigService],
-      useFactory: (config: ConfigService) => {
-        const secret = config.get<string>('ADMIN_JWT_SECRET') ?? '';
-        if (secret.length < 16) {
-          throw new Error('ADMIN_JWT_SECRET must be set in .env (at least 16 characters)');
-        }
-        return { secret, signOptions: { expiresIn: config.get('ADMIN_JWT_EXPIRES_IN', '1d') } };
-      },
-    }),
+  imports: [JwtModule.register({}), TypeOrmModule.forFeature([Admin, AdminRole, AdminSession])],
+  controllers: [AuthController, AdminsController, RolesController, PermissionsController],
+  providers: [
+    { provide: ADMIN_AUTH_OPTIONS, inject: [ConfigService], useFactory: adminAuthOptions },
+    AdminSessionsService,
+    AuthService,
+    AdminGuard,
+    AdminsService,
+    RolesService,
+    AdminBootstrapService,
   ],
-  controllers: [AuthController],
-  providers: [AuthService, AdminGuard],
-  exports: [AuthService, AdminGuard],
+  exports: [AuthService, AdminGuard, AdminSessionsService],
 })
 export class AuthModule {}

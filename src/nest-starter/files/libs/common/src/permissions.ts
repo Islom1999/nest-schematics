@@ -8,6 +8,8 @@ export interface PermissionGroup {
 }
 
 export const PERMISSION_CATALOG: PermissionGroup[] = [
+  { resource: 'admin', actions: ['read', 'write'] },
+  { resource: 'role', actions: ['read', 'write'] },
   // @ns:permissions
 ];
 

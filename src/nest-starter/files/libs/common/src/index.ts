@@ -1,3 +1,4 @@
+export * from './auth';
 export * from './base/base-crud.controller';
 export * from './base/base-crud.service';
 export * from './config/env.validation';
