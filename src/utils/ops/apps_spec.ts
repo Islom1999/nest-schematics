@@ -1,5 +1,5 @@
 import { HostTree, Tree } from '@angular-devkit/schematics';
-import { addNestApp, addWorkerJob, hasWorker, insertAtMarker, MARKERS, WORKER_MODULE } from './index';
+import { addNestApp, addNestAssets, addWorkerJob, hasWorker, insertAtMarker, MARKERS, WORKER_MODULE } from './index';
 
 function read(tree: Tree, p: string): string {
   return tree.read(p)!.toString('utf-8');
@@ -55,6 +55,17 @@ describe('ops/apps', () => {
     expect(pkg.scripts['build:worker']).toBe('nest build worker');
     expect(pkg.scripts['start:dev:worker']).toBe('nest start worker --watch');
     expect(pkg.scripts['start:prod:bot']).toBe('node dist/apps/bot/main');
+  });
+
+  it('adds a nest-cli asset to an app once', () => {
+    const asset = { include: 'modules/ai/chat/prompts/*.md', watchAssets: true };
+    expect(addNestAssets(tree, 'api', asset)).toBeTrue();
+    expect(addNestAssets(tree, 'api', { include: 'modules/ai/chat/prompts/*.md' })).toBeFalse();
+    expect(addNestAssets(tree, 'api', { include: 'mail/*.hbs' })).toBeTrue();
+    const cli = JSON.parse(read(tree, '/nest-cli.json'));
+    expect(cli.projects.api.compilerOptions.assets).toEqual([asset, { include: 'mail/*.hbs' }]);
+    expect(cli.projects.common.compilerOptions).toBeUndefined();
+    expect(() => addNestAssets(tree, 'nope', asset)).toThrowError(/no "nope" project/);
   });
 
   it('leaves a customised build script alone', () => {

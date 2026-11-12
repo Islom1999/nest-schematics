@@ -1,0 +1,42 @@
+{
+  "$schema": "http://json-schema.org/schema",
+  "$id": "AiAddonSchema",
+  "title": "AI (AiService, ai_logs, chat, quota)",
+  "type": "object",
+  "properties": {
+    "provider": {
+      "type": "string",
+      "enum": ["openrouter", "gemini"],
+      "description": "AI provider to add (run again with the other one to add it alongside). Default: the installed one, else openrouter",
+      "$default": {
+        "$source": "argv",
+        "index": 0
+      }
+    },
+    "chat": {
+      "type": "boolean",
+      "description": "Add the client AI chat (sessions, messages, SSE streaming). Needs auth-client",
+      "default": false
+    },
+    "quota": {
+      "type": "boolean",
+      "description": "Add per-user chat limits: AI_DAILY_MESSAGES and AI_MONTHLY_TOKENS (needs --chat)",
+      "default": false
+    },
+    "force": {
+      "type": "boolean",
+      "description": "Overwrite generated files that you have edited",
+      "default": false
+    },
+    "skipInstall": {
+      "type": "boolean",
+      "description": "Do not run npm install (nothing to install: providers use fetch)",
+      "default": false
+    },
+    "root": {
+      "type": "string",
+      "description": "Project directory relative to the current directory",
+      "default": ""
+    }
+  }
+}

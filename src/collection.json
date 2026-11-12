@@ -42,6 +42,11 @@
       "description": "Add server_api_logs: global request log interceptor with secret masking, x-request-id, @LogPayment(), logCron(), admin routes and retention",
       "factory": "./add-ons/api-logs/index#apiLogs",
       "schema": "./add-ons/api-logs/schema.json"
+    },
+    "ai": {
+      "description": "Add AiService (OpenRouter / Gemini over fetch: generate, stream, vision, json, image), ai_logs with tokens and cost, admin stats; --chat: client SSE chat; --quota: per-user limits",
+      "factory": "./add-ons/ai/index#ai",
+      "schema": "./add-ons/ai/schema.json"
     }
   }
 }
