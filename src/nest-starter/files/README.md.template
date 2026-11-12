@@ -1,0 +1,92 @@
+# <%= classify(name) %>
+
+NestJS 11 + TypeORM (PostgreSQL) monorepo (<%= apps.join(', ') %>). Generated with [fuse-nest-schematics](https://www.npmjs.com/package/fuse-nest-schematics). The frontend is [fuse-schematics](https://www.npmjs.com/package/fuse-schematics) (Fuse Admin, Angular).
+
+## Ishga tushirish
+
+```bash
+cp .env.example .env      # DB_* va ADMIN_* qiymatlarini to'ldiring
+npm install
+npm run start:dev         # = start:dev:api
+```
+
+- API: `http://localhost:3000/api`
+- Swagger: `http://localhost:3000/docs` (`SWAGGER_ENABLED=false` bilan o'chadi)
+- Kirish: `POST /api/auth/sign-in` `{ email, password }` → `{ accessToken, user }`
+
+## Ilovalar va skriptlar
+
+| Ilova | Vazifa | Dev | Build | Prod |
+|---|---|---|---|---|
+<% for (const app of apps) { %>| `apps/<%= app %>` | <%= app === 'api' ? 'HTTP admin API' : app === 'bot' ? 'Telegram bot (telegraf, `BOT_TOKEN`)' : 'Cron/fon vazifalar (`@nestjs/schedule`)' %> | `npm run start:dev:<%= app %>` | `npm run build:<%= app %>` | `npm run start:prod:<%= app %>` |
+<% } %>
+`npm run build` builds every app into `dist/apps/<app>/main.js` (webpack).
+
+## Tuzilma
+
+```
+apps/
+├── api/src/
+│   ├── main.ts                 # prefix /api, ValidationPipe, CORS, helmet, Swagger
+│   ├── api.module.ts           # Config + Database + Auth + CRUD modullar
+│   ├── auth/                   # JWT sign-in, AdminGuard, @AdminResource
+│   └── modules/                # generatsiya qilingan CRUD modullar<% if (apps.includes('bot')) { %>
+├── bot/src/                    # telegraf bot (DatabaseModule bilan)<% } %><% if (apps.includes('worker')) { %>
+├── worker/src/                 # @Cron vazifalar<% } %>
+libs/
+├── database/src/               # @app/database
+│   ├── base.entity.ts          # uuid id, createdAt, updatedAt, deletedAt (soft delete)
+│   ├── entities/               # barcha entity'lar + index.ts barrel
+│   ├── database.module.ts      # TypeORM (autoLoadEntities, SnakeNamingStrategy)
+│   └── data-source.ts          # migratsiya CLI uchun
+└── common/src/                 # @app/common
+    ├── base/                   # BaseCrudService, BaseCrudController
+    ├── dto/table-query.dto.ts  # PrimeNG TableQueryDTO + { count, data }
+    ├── query/table-query.ts    # xavfsiz filter/sort/qidiruv
+    ├── decorators/             # @AdminAccess, @Public, @RequirePermissions
+    └── filters/                # yagona xato formati (PG xatolari → 400/409)
+```
+
+## CRUD modul qo'shish
+
+`--fields` bilan (Nest CLI noma'lum flaglarni qabul qilmaydi, shuning uchun schematics-cli orqali):
+
+```bash
+npx -p @angular-devkit/schematics-cli schematics fuse-nest-schematics:crud product \
+  --fields "name:string,price:number,active:boolean,note:text?,status:enum(draft|published)"
+```
+
+Faqat `name:string` maydoni bilan Nest CLI orqali ham bo'ladi (monorepoda `-p api` shart):
+
+```bash
+nest g -c fuse-nest-schematics crud product -p api
+```
+
+Natija:
+
+- `libs/database/src/entities/product.entity.ts` (+ `entities/index.ts` ga export)
+- `apps/api/src/modules/product/`: DTO (create/update/query), service, controller, module
+- `ProductModule` `apps/api/src/api.module.ts` ga avtomatik ulanadi
+
+Endpointlar `admin/product` ostida va Angular `BaseCrudService` bilan bir xil:
+
+| Metod | Yo'l | Vazifa |
+|---|---|---|
+| GET | `/api/admin/product` | hammasi (sahifasiz) |
+| POST | `/api/admin/product/pagination` | PrimeNG jadval → `{ count, data }` |
+| POST | `/api/admin/product/pagination/archive` | arxiv (soft-delete) |
+| GET | `/api/admin/product/:id` | bitta yozuv |
+| GET | `/api/admin/product/archive/:id` | arxivdagi yozuv |
+| POST | `/api/admin/product` | yaratish |
+| PUT | `/api/admin/product/:id` | tahrirlash |
+| DELETE | `/api/admin/product/:id` | arxivga o'tkazish |
+| GET | `/api/admin/product/repair/:id` | arxivdan tiklash |
+
+## Migratsiyalar
+
+`DB_SYNCHRONIZE=true` faqat lokalda. Productionda `DB_SYNCHRONIZE=false` qiling va migratsiyadan foydalaning (build shart emas, ts-node bilan ishlaydi):
+
+```bash
+npm run migration:generate --name=Init
+npm run migration:run
+```

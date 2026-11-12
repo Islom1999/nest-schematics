@@ -1,0 +1,65 @@
+{
+  "name": "fuse-nest-schematics",
+  "version": "0.1.0",
+  "description": "NestJS + TypeORM admin API loyihalari va fuse-schematics (Angular) bilan mos CRUD modullarini generatsiya qiluvchi schematics to'plami",
+  "main": "src/collection.json",
+  "schematics": "./src/collection.json",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && jasmine \"src/**/*_spec.js\"",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "nestjs",
+    "nest",
+    "schematics",
+    "nestjs-schematics",
+    "typeorm",
+    "postgresql",
+    "crud",
+    "crud-generator",
+    "generator",
+    "code-generator",
+    "scaffolding",
+    "admin-api",
+    "fuse",
+    "fuse-admin",
+    "primeng",
+    "swagger"
+  ],
+  "author": {
+    "name": "Islom Karimov",
+    "email": "islomkarimovalisherovich@gmail.com"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.19.0",
+    "npm": ">=9.0.0"
+  },
+  "peerDependencies": {
+    "@nestjs/core": "^11.0.0 || ^12.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@nestjs/core": {
+      "optional": true
+    }
+  },
+  "dependencies": {
+    "@angular-devkit/core": "^20.3.9",
+    "@angular-devkit/schematics": "^20.3.9",
+    "typescript": "~5.9.2"
+  },
+  "devDependencies": {
+    "@types/jasmine": "~5.1.0",
+    "@types/node": "^20.17.19",
+    "jasmine": "^5.0.0"
+  },
+  "files": [
+    "src",
+    "!src/**/*_spec.*",
+    "!src/**/*.js.map",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ]
+}

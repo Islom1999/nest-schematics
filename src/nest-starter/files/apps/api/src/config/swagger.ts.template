@@ -1,0 +1,25 @@
+import { INestApplication } from '@nestjs/common';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+
+/**
+ * API docs on /docs. On by default outside production; in production only
+ * with SWAGGER_ENABLED=true, so the route list is never public by accident.
+ * Returns the docs path, or null when disabled.
+ */
+export function setupSwagger(app: INestApplication): string | null {
+  const flag = process.env.SWAGGER_ENABLED;
+  const enabled = flag === 'true' || (flag !== 'false' && process.env.NODE_ENV !== 'production');
+  if (!enabled) return null;
+
+  const config = new DocumentBuilder()
+    .setTitle('<%= classify(name) %> API')
+    .setDescription(
+      'Admin API (`/api/admin/*`, Bearer JWT). Tables use `POST <resource>/pagination` ' +
+        'with a PrimeNG lazy-load body and return `{ count, data }`.',
+    )
+    .setVersion('1.0')
+    .addBearerAuth()
+    .build();
+  SwaggerModule.setup('docs', app, () => SwaggerModule.createDocument(app, config));
+  return 'docs';
+}

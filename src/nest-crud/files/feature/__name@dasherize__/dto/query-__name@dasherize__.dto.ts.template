@@ -1,0 +1,8 @@
+import { TableQueryDto } from '@app/common';
+
+/**
+ * Body of `POST admin/<%= dasherize(name) %>/pagination[/archive]` (Angular `TableQueryDTO`).
+ * Filterable/sortable fields: <%= allFieldNames.join(', ') %>.
+ * Example filters: <%= filterExample %>
+ */
+export class Query<%= classify(name) %>Dto extends TableQueryDto {}

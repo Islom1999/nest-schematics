@@ -1,0 +1,23 @@
+import { Injectable } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { BaseCrudService, TableQueryOptions } from '@app/common';
+import { <%= classify(name) %> } from '@app/database';
+import { Create<%= classify(name) %>Dto } from './dto/create-<%= dasherize(name) %>.dto';
+import { Update<%= classify(name) %>Dto } from './dto/update-<%= dasherize(name) %>.dto';
+
+@Injectable()
+export class <%= classify(name) %>Service extends BaseCrudService<
+  <%= classify(name) %>,
+  Create<%= classify(name) %>Dto,
+  Update<%= classify(name) %>Dto
+> {
+  protected override tableOptions: TableQueryOptions = {
+    searchFields: [<%= searchFields.map((f) => "'" + f + "'").join(', ') %>],
+    defaultSort: { field: 'createdAt', order: 'DESC' },
+  };
+
+  constructor(@InjectRepository(<%= classify(name) %>) repository: Repository<<%= classify(name) %>>) {
+    super(repository);
+  }
+}

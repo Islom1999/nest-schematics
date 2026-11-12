@@ -1,0 +1,38 @@
+import { Body, HttpCode, HttpStatus, Post } from '@nestjs/common';
+import { AdminAccess, BaseCrudController } from '@app/common';
+import { <%= classify(name) %> } from '@app/database';
+import { AdminResource } from '<%= authPath %>';
+import { Create<%= classify(name) %>Dto } from './dto/create-<%= dasherize(name) %>.dto';
+import { Query<%= classify(name) %>Dto } from './dto/query-<%= dasherize(name) %>.dto';
+import { Update<%= classify(name) %>Dto } from './dto/update-<%= dasherize(name) %>.dto';
+import { <%= classify(name) %>Service } from './<%= dasherize(name) %>.service';
+
+/** `/api/admin/<%= dasherize(name) %>` — routes in BaseCrudController. */
+@AdminResource('<%= dasherize(name) %>', {
+  read: ['<%= dasherize(name) %>.read'],
+  write: ['<%= dasherize(name) %>.write'],
+})
+export class <%= classify(name) %>Controller extends BaseCrudController({
+  entity: <%= classify(name) %>,
+  createDto: Create<%= classify(name) %>Dto,
+  updateDto: Update<%= classify(name) %>Dto,
+}) {
+  constructor(service: <%= classify(name) %>Service) {
+    super(service);
+  }
+
+  // Typed body for Swagger; same behaviour as the base route.
+  @AdminAccess('read')
+  @HttpCode(HttpStatus.OK)
+  @Post('pagination')
+  override findAllPagination(@Body() query: Query<%= classify(name) %>Dto) {
+    return super.findAllPagination(query);
+  }
+
+  @AdminAccess('read')
+  @HttpCode(HttpStatus.OK)
+  @Post('pagination/archive')
+  override findAllPaginationArchive(@Body() query: Query<%= classify(name) %>Dto) {
+    return super.findAllPaginationArchive(query);
+  }
+}

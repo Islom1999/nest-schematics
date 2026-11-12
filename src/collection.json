@@ -1,0 +1,17 @@
+{
+  "$schema": "../node_modules/@angular-devkit/schematics/collection-schema.json",
+  "schematics": {
+    "nest-starter": {
+      "description": "Generate a NestJS + TypeORM (PostgreSQL) monorepo: apps/api (+bot, worker), libs/common, libs/database",
+      "factory": "./nest-starter/index#nestStarter",
+      "schema": "./nest-starter/schema.json",
+      "aliases": ["starter", "new"]
+    },
+    "nest-crud": {
+      "description": "Generate a CRUD resource: entity in libs/database, DTOs/service/controller/module in apps/api for admin/<name>",
+      "factory": "./nest-crud/index#nestCrud",
+      "schema": "./nest-crud/schema.json",
+      "aliases": ["crud", "resource"]
+    }
+  }
+}

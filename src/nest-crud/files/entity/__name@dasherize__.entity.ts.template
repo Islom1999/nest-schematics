@@ -1,0 +1,10 @@
+import { ApiProperty<% if (hasOptionalProps) { %>, ApiPropertyOptional<% } %> } from '@nestjs/swagger';
+import { Column, Entity } from 'typeorm';
+import { BaseEntity } from '../base.entity';
+<% if (entityEnums) { %>
+<%= entityEnums %>
+<% } %>
+@Entity({ name: '<%= underscore(name) %>' })
+export class <%= classify(name) %> extends BaseEntity {
+<%= entityColumns %>
+}

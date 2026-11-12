@@ -1,0 +1,32 @@
+{
+  "$schema": "http://json-schema.org/schema",
+  "$id": "NestStarterSchema",
+  "title": "NestJS Starter Schema",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Project name (e.g. shop-api)",
+      "$default": {
+        "$source": "argv",
+        "index": 0
+      },
+      "x-prompt": "Project name?"
+    },
+    "directory": {
+      "type": "string",
+      "description": "Parent directory for the project (default: current directory)"
+    },
+    "apps": {
+      "type": "string",
+      "description": "Comma-separated apps to create: api (always), bot (telegraf), worker (@nestjs/schedule)",
+      "default": "api,bot,worker"
+    },
+    "skipInstall": {
+      "type": "boolean",
+      "description": "Do not run npm install",
+      "default": false
+    }
+  },
+  "required": ["name"]
+}

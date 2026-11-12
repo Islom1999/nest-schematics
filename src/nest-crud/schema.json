@@ -1,0 +1,63 @@
+{
+  "$schema": "http://json-schema.org/schema",
+  "$id": "NestCrudSchema",
+  "title": "NestJS CRUD Resource Schema",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Resource name (e.g. product, sp-year). Route: admin/<dasherized-name>",
+      "$default": {
+        "$source": "argv",
+        "index": 0
+      },
+      "x-prompt": "Resource name?"
+    },
+    "app": {
+      "type": "string",
+      "description": "Monorepo app the resource belongs to (apps/<app>). Default: api (or the app of --sourceRoot)"
+    },
+    "path": {
+      "type": "string",
+      "description": "Folder the resource folder is created in. Default: apps/<app>/src/modules"
+    },
+    "fields": {
+      "type": "string",
+      "description": "Field spec, e.g. \"title:string,price:number,active:boolean,note:text?,status:enum(draft|published)\". Types: string|number|boolean|date|text|enum(a|b). Trailing ? = nullable. Default: name:string",
+      "alias": "f"
+    },
+    "module": {
+      "type": "string",
+      "description": "Module file the new module is registered in. Default: apps/<app>/src/<app>.module.ts"
+    },
+    "dbLib": {
+      "type": "string",
+      "description": "Database library source folder (entity goes to <dbLib>/entities)",
+      "default": "libs/database/src"
+    },
+    "skipImport": {
+      "type": "boolean",
+      "description": "Do not register the module in the root module",
+      "default": false
+    },
+    "sourceRoot": {
+      "type": "string",
+      "description": "Passed by the Nest CLI (apps/<app>/src); used to pick --app"
+    },
+    "language": {
+      "type": "string",
+      "description": "Ignored (Nest CLI passes it); only ts is generated"
+    },
+    "spec": {
+      "type": "boolean",
+      "description": "Ignored (Nest CLI passes it)"
+    },
+    "flat": {
+      "type": "boolean",
+      "description": "Ignored (Nest CLI passes it); resources always get their own folder"
+    }
+  },
+  "required": [
+    "name"
+  ]
+}

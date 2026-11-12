@@ -1,0 +1,8 @@
+import { ApiProperty<% if (hasOptionalDtoProps) { %>, ApiPropertyOptional<% } %> } from '@nestjs/swagger';
+<% if (needsTransformer) { %>import { Type } from 'class-transformer';
+<% } %><% if (validatorImports) { %>import { <%= validatorImports %> } from 'class-validator';
+<% } %><% if (enumImports.length) { %>import { <%= enumImports.join(', ') %> } from '@app/database';
+<% } %>
+export class Create<%= classify(name) %>Dto {
+<%= createDtoProps %>
+}

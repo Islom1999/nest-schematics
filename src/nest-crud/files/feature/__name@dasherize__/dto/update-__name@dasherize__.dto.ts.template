@@ -1,0 +1,5 @@
+import { PartialType } from '@nestjs/swagger';
+import { Create<%= classify(name) %>Dto } from './create-<%= dasherize(name) %>.dto';
+
+/** Every create field, all optional (validation rules kept). */
+export class Update<%= classify(name) %>Dto extends PartialType(Create<%= classify(name) %>Dto) {}
