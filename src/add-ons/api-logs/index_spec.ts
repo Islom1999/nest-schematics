@@ -70,6 +70,24 @@ describe('api-logs add-on', () => {
     expect(tree.readContent('/libs/common/src/permissions.ts')).toContain("{ resource: 'server_api_log', actions: ['read'] },");
   });
 
+  it('adds a CSV export (same permission, declared before :id) and typed list filters', () => {
+    const dir = '/apps/api/src/modules/server-api-logs';
+    const controller = tree.readContent(`${dir}/server-api-logs.controller.ts`);
+    expect(controller).toContain("@AdminAccess('read')\n  @Get('export')");
+    expect(controller.indexOf("@Get('export')")).toBeLessThan(controller.indexOf("@Get(':id')"));
+    expect(controller).toContain('new StreamableFile(stream');
+    expect(controller).toContain('@Body() query: ServerApiLogQueryDto');
+    const dto = tree.readContent(`${dir}/dto/server-api-log-query.dto.ts`);
+    for (const field of ['method?', 'statusCode?', 'path?', 'userId?', 'from?', 'to?', 'minDurationMs?', 'maxDurationMs?', 'limit?']) {
+      expect(dto).toContain(field);
+    }
+    expect(dto).toContain('EXPORT_MAX_ROWS = 20_000');
+    const service = tree.readContent(`${dir}/server-api-logs.service.ts`);
+    expect(service).toContain("queryFilters: ['type', 'method', 'statusCode', 'userId', 'path', 'from', 'to', 'minDurationMs', 'maxDurationMs']");
+    expect(tree.readContent(`${dir}/csv.ts`)).toContain('[=+\\-@\\t\\r]');
+    expect(tree.exists(`${dir}/server-api-logs.service.spec.ts`)).toBeTrue();
+  });
+
   it('adds optional env keys with defaults', () => {
     const example = tree.readContent('/.env.example');
     expect(example).toContain('# ── API logs (server_api_logs)');

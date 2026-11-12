@@ -1,8 +1,9 @@
-import { Body, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
-import { ApiExtraModels, ApiOkResponse, ApiOperation, getSchemaPath } from '@nestjs/swagger';
-import { AdminAccess, TableQueryDto } from '@app/common';
+import { Body, Get, Header, HttpCode, HttpStatus, Param, ParseUUIDPipe, Post, Query, StreamableFile } from '@nestjs/common';
+import { ApiExtraModels, ApiOkResponse, ApiOperation, ApiProduces, getSchemaPath } from '@nestjs/swagger';
+import { AdminAccess } from '@app/common';
 import { ServerApiLog } from '@app/database';
 import { AdminResource } from '../../auth';
+import { ServerApiLogExportQueryDto, ServerApiLogQueryDto } from './dto/server-api-log-query.dto';
 import { ServerApiLogStatsDto, ServerApiLogStatsQueryDto } from './dto/server-api-log-stats.dto';
 import { ServerApiLogsService } from './server-api-logs.service';
 
@@ -18,7 +19,10 @@ export class ServerApiLogsController {
   @AdminAccess('read')
   @HttpCode(HttpStatus.OK)
   @Post('pagination')
-  @ApiOperation({ summary: 'Paged logs (PrimeNG lazy table), newest first; bodies omitted' })
+  @ApiOperation({
+    summary:
+      'Paged logs (PrimeNG lazy table), newest first; bodies omitted. Typed filters: type, method, statusCode, path, userId, from, to, minDurationMs, maxDurationMs',
+  })
   @ApiOkResponse({
     schema: {
       type: 'object',
@@ -28,8 +32,21 @@ export class ServerApiLogsController {
       },
     },
   })
-  findAllPagination(@Body() query: TableQueryDto) {
+  findAllPagination(@Body() query: ServerApiLogQueryDto) {
     return this.service.page(query);
+  }
+
+  @AdminAccess('read')
+  @Get('export')
+  @Header('Cache-Control', 'no-store')
+  @ApiOperation({
+    summary: 'CSV download of the logs matching the pagination filters (no bodies; newest first; limit 20000, default 5000)',
+  })
+  @ApiProduces('text/csv')
+  @ApiOkResponse({ description: 'CSV file', schema: { type: 'string', format: 'binary' } })
+  async exportLogs(@Query() query: ServerApiLogExportQueryDto): Promise<StreamableFile> {
+    const { stream, filename } = await this.service.exportCsv(query);
+    return new StreamableFile(stream, { type: 'text/csv; charset=utf-8', disposition: `attachment; filename="${filename}"` });
   }
 
   @AdminAccess('read')

@@ -35,6 +35,43 @@ api_logs_smoke() {
     fail "a password reached server_api_logs unmasked."
   fi
   log "api-logs: row for $rid = $row"
+
+  # ── CSV export and typed filters (admin token) ───────────────────────
+  local admin email password uid="e2e-csv-$$"
+  email="$(grep -E '^ADMIN_EMAIL=' .env | cut -d= -f2-)"
+  password="$(grep -E '^ADMIN_PASSWORD=' .env | cut -d= -f2-)"
+  admin=$(curl -fsS -X POST "$base/auth/sign-in" -H 'content-type: application/json' -H 'x-device-id: e2e-api-logs' \
+    -d "$(node -e 'console.log(JSON.stringify({email:process.argv[1],password:process.argv[2]}))' "$email" "$password")" |
+    node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>process.stdout.write(JSON.parse(s).accessToken||''))") ||
+    fail "api-logs: admin sign-in failed"
+  api_logs_psql "INSERT INTO server_api_logs (type, method, url, status_code, duration_ms, user_id, error)
+    VALUES ('API', 'PUT', '/api/e2e/csv', 503, 777, '$uid', '=1+1|calc'), ('API', 'PUT', '/api/e2e/csv', 200, 5, '$uid', 'plain, with \"comma\"')" >/dev/null
+
+  code=$(curl -s -o "$WORK/apilog-export.csv" -D "$WORK/apilog-export.h" -w '%{http_code}' "$base/admin/server-api-logs/export?userId=$uid" -H "authorization: Bearer $admin")
+  [ "$code" = "200" ] || { cat "$WORK/apilog-export.csv"; fail "GET admin/server-api-logs/export returned $code, expected 200."; }
+  grep -qi '^content-type: text/csv' "$WORK/apilog-export.h" || { cat "$WORK/apilog-export.h"; fail "export is not text/csv."; }
+  grep -qi '^content-disposition: attachment; filename="server-api-logs-' "$WORK/apilog-export.h" || fail "export has no attachment filename."
+  grep -q 'createdAt,id,type,module,handler,method,url,statusCode' "$WORK/apilog-export.csv" || { head -3 "$WORK/apilog-export.csv"; fail "export has no header line."; }
+  [ "$(grep -c "$uid" "$WORK/apilog-export.csv")" = "2" ] || { cat "$WORK/apilog-export.csv"; fail "export of userId=$uid should have 2 rows."; }
+  grep -q ",'=1+1|calc" "$WORK/apilog-export.csv" || { cat "$WORK/apilog-export.csv"; fail "export cell starting with '=' is not prefixed with a quote."; }
+  grep -q '"plain, with ""comma"""' "$WORK/apilog-export.csv" || { cat "$WORK/apilog-export.csv"; fail "export cell with a comma and quotes is not escaped."; }
+  # Same typed filters as the list: duration range narrows to the 503 row.
+  curl -fsS "$base/admin/server-api-logs/export?userId=$uid&minDurationMs=100" -H "authorization: Bearer $admin" >"$WORK/apilog-export2.csv"
+  [ "$(grep -c "$uid" "$WORK/apilog-export2.csv")" = "1" ] || { cat "$WORK/apilog-export2.csv"; fail "export minDurationMs filter should leave 1 row."; }
+  curl -fsS "$base/admin/server-api-logs/export?filters=%7B%22statusCode%22%3A%7B%22value%22%3A503%2C%22matchMode%22%3A%22equals%22%7D%7D&userId=$uid" \
+    -H "authorization: Bearer $admin" >"$WORK/apilog-export3.csv"
+  [ "$(grep -c "$uid" "$WORK/apilog-export3.csv")" = "1" ] || { cat "$WORK/apilog-export3.csv"; fail "export with a JSON filters parameter should leave 1 row."; }
+  code=$(curl -s -o /dev/null -w '%{http_code}' "$base/admin/server-api-logs/export?limit=999999" -H "authorization: Bearer $admin")
+  [ "$code" = "400" ] || fail "export with limit above the cap returned $code, expected 400."
+  code=$(curl -s -o /dev/null -w '%{http_code}' "$base/admin/server-api-logs/export?filters=not-json" -H "authorization: Bearer $admin")
+  [ "$code" = "400" ] || fail "export with broken filters JSON returned $code, expected 400."
+  code=$(curl -s -o /dev/null -w '%{http_code}' "$base/admin/server-api-logs/export")
+  [ "$code" = "401" ] || fail "export without a token returned $code, expected 401."
+  curl -fsS -X POST "$base/admin/server-api-logs/pagination" -H 'content-type: application/json' -H "authorization: Bearer $admin" \
+    -d "{\"first\":0,\"rows\":10,\"userId\":\"$uid\",\"method\":\"put\",\"statusCode\":503,\"path\":\"E2E/CSV\",\"minDurationMs\":700,\"maxDurationMs\":800}" >"$WORK/apilog-page.json"
+  node -e "const r=JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'));process.exit(r.count===1&&r.data[0].durationMs===777&&!('requestBody' in r.data[0])?0:1)" "$WORK/apilog-page.json" ||
+    { cat "$WORK/apilog-page.json"; fail "typed pagination filters should return exactly the 503 row."; }
+  log "api-logs: CSV export and typed filters OK"
 }
 
 if [ -z "${E2E_RERUN:-}" ]; then E2E_SMOKE="${E2E_SMOKE:-}"$'\n'api_logs_smoke; fi

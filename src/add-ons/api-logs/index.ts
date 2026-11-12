@@ -41,8 +41,8 @@ function migrationTimestamp(tree: Tree, root: string): string {
 /**
  * `npm run g -- api-logs`: `server_api_logs` entity + migration, a global
  * interceptor (masked bodies, x-request-id, API_LOG_MODE), `@LogPayment()`,
- * `ApiLogService.logCron()`, read-only admin routes and, with the worker, a
- * daily retention job.
+ * `ApiLogService.logCron()`, read-only admin routes (list with typed filters,
+ * CSV export) and, with the worker, a daily retention job.
  */
 export function apiLogs(options: Schema): Rule {
   return (tree: Tree, context: SchematicContext) => {
@@ -118,7 +118,7 @@ export function apiLogs(options: Schema): Rule {
       (_host: Tree, ctx: SchematicContext) => {
         ctx.logger.info(
           `API logs: run "npm run migration:run" (${MIGRATIONS_DIR}/${timestamp}-server-api-logs.ts), ` +
-            'admin routes at /api/admin/server-api-logs (permission server_api_log.read).',
+            'admin routes at /api/admin/server-api-logs (permission server_api_log.read), CSV at GET .../export.',
         );
       },
     ]);

@@ -1,10 +1,13 @@
-import { Body, Delete, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Post, Put, Query } from '@nestjs/common';
-import { ApiOkResponse, ApiOperation, ApiProperty } from '@nestjs/swagger';
+import { Body, Delete, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Patch, Post, Put, Query } from '@nestjs/common';
+import { ApiCreatedResponse, ApiOkResponse, ApiOperation, ApiProperty } from '@nestjs/swagger';
 import { IsBoolean } from 'class-validator';
-import { AdminAccess, ApiPaginatedResponse, OptionDto, OptionsQueryDto, TableQueryDto } from '@app/common';
+import { AdminAccess, ApiPaginatedResponse, DeleteResultDto, OptionDto, OptionsQueryDto, TableQueryDto } from '@app/common';
 import { User } from '@app/database';
 import { AdminResource } from '../../auth/admin-resource.decorator';
 import { RevokedCountDto, SessionDto, SuccessDto } from '../../auth/dto/auth-response.dto';
+import { CreateUserDto } from './dto/create-user.dto';
+import { UpdateUserDto } from './dto/update-user.dto';
+import { UserListQueryDto } from './dto/user-list-query.dto';
 import { UsersService } from './users.service';
 
 export class SetUserBlockedDto {
@@ -14,12 +17,45 @@ export class SetUserBlockedDto {
 }
 
 /**
- * `/api/admin/users`: client accounts (read: `user.read`, block and session
- * control: `user.write`). Table routes match the CRUD ones (PrimeNG lazy table).
+ * `/api/admin/users`: client accounts (read: `user.read`; create, edit, delete,
+ * block and session control: `user.write`). Table routes match the CRUD ones
+ * (PrimeNG lazy table).
  */
 @AdminResource('users', { read: ['user.read'], write: ['user.write'] })
 export class UsersController {
   constructor(private readonly service: UsersService) {}
+
+  @AdminAccess('read')
+  @Get()
+  @ApiOperation({ summary: 'Unpaged users for selects (?search=&limit=, at most 1000)' })
+  @ApiOkResponse({ type: User, isArray: true })
+  list(@Query() query: UserListQueryDto) {
+    return this.service.list(query.search, query.limit);
+  }
+
+  @AdminAccess('write')
+  @Post()
+  @ApiOperation({ summary: 'Create a user (409 when the phone or email is taken)' })
+  @ApiCreatedResponse({ type: User })
+  create(@Body() dto: CreateUserDto) {
+    return this.service.create(dto);
+  }
+
+  @AdminAccess('write')
+  @Patch(':id')
+  @ApiOperation({ summary: 'Edit a user (409 when the phone or email is taken)' })
+  @ApiOkResponse({ type: User })
+  update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateUserDto) {
+    return this.service.update(id, dto);
+  }
+
+  @AdminAccess('write')
+  @Delete(':id')
+  @ApiOperation({ summary: 'Soft delete a user; ends all their sessions' })
+  @ApiOkResponse({ type: DeleteResultDto })
+  delete(@Param('id', ParseUUIDPipe) id: string) {
+    return this.service.delete(id);
+  }
 
   @AdminAccess('read')
   @HttpCode(HttpStatus.OK)

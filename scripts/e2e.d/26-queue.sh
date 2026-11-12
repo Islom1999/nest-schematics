@@ -19,6 +19,39 @@ queue_smoke() {
   code=$(curl -s -o /dev/null -w '%{http_code}' "$base/admin/queues")
   [ "$code" = "401" ] || fail "GET admin/queues without a token returned $code, expected 401."
   grep -q 'in-memory job queue' "$WORK/api.log" || { tail -30 "$WORK/api.log"; fail "queue: no in-memory warning in the API log."; }
+
+  # ── jobs, retry, clean, pause, resume (memory driver; BullMQ is covered by the jest specs) ──
+  q_call() { # METHOD PATH [BODY] [TOKEN]
+    local args=(-s -o "$WORK/q.json" -w '%{http_code}' -X "$1" "$base/$2" -H 'content-type: application/json')
+    [ -n "${3:-}" ] && args+=(-d "$3")
+    [ -n "${4-$access}" ] && args+=(-H "authorization: Bearer ${4-$access}")
+    code=$(curl "${args[@]}")
+  }
+  q_expect() { [ "$code" = "$1" ] || { cat "$WORK/q.json"; echo; fail "queue: $2: got HTTP $code, expected $1"; }; }
+  q_call GET "admin/queues/default/jobs?status=failed"
+  q_expect 200 "GET queues/default/jobs"
+  grep -q '"count":0' "$WORK/q.json" && grep -q '"data":\[\]' "$WORK/q.json" || fail "queue: empty job list expected: $(cat "$WORK/q.json")"
+  q_call GET "admin/queues/default/jobs?status=bogus"
+  q_expect 400 "invalid status"
+  q_call GET "admin/queues/nope/jobs?status=failed"
+  q_expect 404 "unknown queue"
+  q_call POST admin/queues/default/jobs/missing/retry
+  q_expect 404 "retry of an unknown job"
+  q_call POST admin/queues/default/clean '{"status":"completed","olderThanMs":0}'
+  q_expect 200 "clean"
+  grep -q '"removed":0' "$WORK/q.json" || fail "queue: clean result: $(cat "$WORK/q.json")"
+  q_call POST admin/queues/default/clean '{"status":"active","olderThanMs":0}'
+  q_expect 400 "active jobs cannot be cleaned"
+  q_call POST admin/queues/default/pause
+  q_expect 200 "pause"
+  q_call GET admin/queues
+  grep -q '"paused":true' "$WORK/q.json" || fail "queue: default is not paused: $(cat "$WORK/q.json")"
+  q_call POST admin/queues/default/resume
+  q_expect 200 "resume"
+  q_call GET admin/queues
+  grep -q '"paused":false' "$WORK/q.json" || fail "queue: default is still paused: $(cat "$WORK/q.json")"
+  q_call POST admin/queues/default/pause "" ""
+  q_expect 401 "pause without a token"
   log "queue OK"
 }
 
