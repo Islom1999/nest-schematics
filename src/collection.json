@@ -38,6 +38,11 @@
       "factory": "./add-ons/upload/index#upload",
       "schema": "./add-ons/upload/schema.json"
     },
+    "upload-tus": {
+      "description": "Add resumable (tus) uploads on top of upload: --engine tusd (docker service + hooks, default) or node (@tus/server in the api); token and limit checks on create, magic-byte check and media_files row on finish, worker cleanup",
+      "factory": "./add-ons/upload-tus/index#uploadTus",
+      "schema": "./add-ons/upload-tus/schema.json"
+    },
     "api-logs": {
       "description": "Add server_api_logs: global request log interceptor with secret masking, x-request-id, @LogPayment(), logCron(), admin routes and retention",
       "factory": "./add-ons/api-logs/index#apiLogs",

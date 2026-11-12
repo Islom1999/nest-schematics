@@ -208,6 +208,72 @@ describe('registries', () => {
   });
 });
 
+describe('addComposeServiceEntry', () => {
+  const COMPOSE = `services:
+  postgres:
+    image: postgres:16-alpine
+
+  api:
+    build: .
+    environment:
+      NODE_ENV: production
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # @ns:services
+
+volumes:
+  postgres-data:
+  # @ns:volumes
+`;
+
+  it('adds list items, map entries and new keys to one service, once', async () => {
+    const { addComposeServiceEntry } = await import('./compose');
+    const tree = new HostTree();
+    tree.create('/docker-compose.yml', COMPOSE);
+    for (let i = 0; i < 2; i++) {
+      addComposeServiceEntry(tree, 'api', 'volumes', '- tus-data:/srv/tusd-data');
+      addComposeServiceEntry(tree, 'api', 'environment', 'TUS_DIR: /srv/tusd-data');
+      addComposeServiceEntry(tree, 'api', 'depends_on', 'tusd:\n  condition: service_started');
+    }
+    expect(read(tree, '/docker-compose.yml')).toBe(`services:
+  postgres:
+    image: postgres:16-alpine
+
+  api:
+    build: .
+    environment:
+      NODE_ENV: production
+      TUS_DIR: /srv/tusd-data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      tusd:
+        condition: service_started
+    volumes:
+      - tus-data:/srv/tusd-data
+
+  # @ns:services
+
+volumes:
+  postgres-data:
+  # @ns:volumes
+`);
+  });
+
+  it('keeps a user value of a map entry and skips unknown services or files', async () => {
+    const { addComposeServiceEntry } = await import('./compose');
+    const tree = new HostTree();
+    tree.create('/docker-compose.yml', COMPOSE.replace('NODE_ENV: production', 'NODE_ENV: production\n      TUS_DIR: /data'));
+    expect(addComposeServiceEntry(tree, 'api', 'environment', 'TUS_DIR: /srv/tusd-data')).toBeFalse();
+    expect(read(tree, '/docker-compose.yml')).toContain('TUS_DIR: /data');
+    expect(addComposeServiceEntry(tree, 'worker', 'environment', 'A: b')).toBeFalse();
+    expect(addComposeServiceEntry(tree, 'postgres-data', 'environment', 'A: b')).toBeFalse();
+    expect(addComposeServiceEntry(new HostTree(), 'api', 'environment', 'A: b')).toBeFalse();
+  });
+});
+
 describe('addIgnoreEntries', () => {
   it('appends missing entries once under a title and skips missing files', async () => {
     const { addIgnoreEntries } = await import('./ignore');
