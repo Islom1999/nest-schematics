@@ -62,7 +62,8 @@ cp .env.example .env
 node - "$DB_HOST" "$DB_PORT" "$DB_USER" "$DB_PASSWORD" "$DB_NAME" "$API_PORT" <<'NODE'
 const fs = require('fs');
 const [host, port, user, password, db, apiPort] = process.argv.slice(2);
-const set = { DB_HOST: host, DB_PORT: port, DB_USERNAME: user, DB_PASSWORD: password, DB_DATABASE: db, PORT: apiPort };
+// Every smoke signs in on its own: lift the 5/min @AuthThrottle() limit of auth/sign-in.
+const set = { DB_HOST: host, DB_PORT: port, DB_USERNAME: user, DB_PASSWORD: password, DB_DATABASE: db, PORT: apiPort, AUTH_THROTTLE_LIMIT: '100' };
 let env = fs.readFileSync('.env', 'utf8');
 for (const [k, v] of Object.entries(set)) env = env.replace(new RegExp(`^${k}=.*$`, 'm'), `${k}=${v}`);
 fs.writeFileSync('.env', env);

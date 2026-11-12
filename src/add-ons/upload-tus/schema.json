@@ -1,0 +1,28 @@
+{
+  "$schema": "http://json-schema.org/schema",
+  "$id": "UploadTusAddonSchema",
+  "title": "Resumable uploads (tus)",
+  "type": "object",
+  "properties": {
+    "engine": {
+      "type": "string",
+      "enum": ["tusd", "node"],
+      "description": "tusd: a tusproject/tusd service in docker-compose with HTTP hooks to the api (recommended); node: @tus/server inside the api at /api/files/tus. Default: the one installed before, else tusd"
+    },
+    "force": {
+      "type": "boolean",
+      "description": "Overwrite generated files that you have edited",
+      "default": false
+    },
+    "skipInstall": {
+      "type": "boolean",
+      "description": "Do not run npm install",
+      "default": false
+    },
+    "root": {
+      "type": "string",
+      "description": "Project directory relative to the current directory",
+      "default": ""
+    }
+  }
+}
