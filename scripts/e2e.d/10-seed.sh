@@ -7,7 +7,7 @@ if [ -z "${E2E_RERUN:-}" ]; then
   E2E_SMOKE="${E2E_SMOKE:-}
 log 'npm run seed'
 npm run --silent seed | tee \"\$WORK/seed.log\"
-grep -q 'Done: demo-data, reference-data' \"\$WORK/seed.log\" || fail 'npm run seed did not run every seeder.'
+grep -Eq 'Done: (.+, )?demo-data, reference-data' \"\$WORK/seed.log\" || fail 'npm run seed did not run every seeder.'
 npm run --silent seed -- demo-data | grep -q 'Done: demo-data' || fail 'npm run seed -- demo-data failed.'
 NODE_ENV=production npm run --silent seed | grep -q 'skip demo-data' || fail 'devOnly seed ran in production.'
 "

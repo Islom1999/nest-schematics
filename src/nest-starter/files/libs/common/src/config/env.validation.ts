@@ -1,12 +1,12 @@
 import { plainToInstance, Type } from 'class-transformer';
-import { IsIn, IsInt, IsOptional, IsString, validateSync } from 'class-validator';
+import { IsIn, IsInt, IsOptional, IsString, Min, MinLength, validateSync } from 'class-validator';
 
 const BOOLEAN = ['true', 'false', '1', '0', ''];
 
 /**
  * `.env` schema shared by every app — an app refuses to boot with a clear
  * message instead of failing later. App-specific keys are checked where used
- * (e.g. ADMIN_JWT_SECRET in the api AuthModule, BOT_TOKEN in the bot).
+ * (e.g. BOT_TOKEN in the bot); the api AuthModule also requires the admin secrets.
  * Generators insert their keys at the marker line.
  */
 export class EnvironmentVariables {
@@ -73,6 +73,39 @@ export class EnvironmentVariables {
   @IsOptional()
   @IsString()
   SWAGGER_PASSWORD?: string;
+
+  // Admin auth (apps/api). Secrets are optional here because bot/worker do not need them.
+  @IsOptional()
+  @IsString()
+  @MinLength(32)
+  ADMIN_JWT_SECRET?: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(32)
+  ADMIN_REFRESH_SECRET?: string;
+
+  @IsOptional()
+  @IsString()
+  ADMIN_JWT_EXPIRES_IN?: string;
+
+  @IsOptional()
+  @IsString()
+  ADMIN_REFRESH_EXPIRES_IN?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  ADMIN_SESSION_LIMIT?: number;
+
+  @IsOptional()
+  @IsString()
+  ADMIN_EMAIL?: string;
+
+  @IsOptional()
+  @IsString()
+  ADMIN_PASSWORD?: string;
   // @ns:env
 }
 

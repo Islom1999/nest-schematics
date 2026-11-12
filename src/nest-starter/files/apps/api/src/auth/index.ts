@@ -1,4 +1,5 @@
 export * from './admin-resource.decorator';
+export * from './admin-sessions.service';
 export * from './admin.guard';
 export * from './auth.module';
 export * from './auth.service';
