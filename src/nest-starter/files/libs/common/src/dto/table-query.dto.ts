@@ -50,13 +50,23 @@ export class TableQueryDto {
   @Max(100)
   rows?: number;
 
-  @ApiPropertyOptional({ example: 'createdAt', description: 'Column to sort; empty = default sort' })
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: 'createdAt',
+    description: 'Column to sort; empty = default sort',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(100)
   sortField?: string | null;
 
-  @ApiPropertyOptional({ example: -1, description: '1 = ASC, anything else = DESC' })
+  @ApiPropertyOptional({
+    type: Number,
+    nullable: true,
+    example: -1,
+    description: '1 = ASC, anything else = DESC',
+  })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
@@ -74,7 +84,12 @@ export class TableQueryDto {
   @IsObject()
   filters?: Record<string, TableFilterRule | TableFilterRule[]>;
 
-  @ApiPropertyOptional({ example: 'search', description: 'Global search over the service searchFields' })
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    example: 'search',
+    description: 'Global search over the service searchFields',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(200)

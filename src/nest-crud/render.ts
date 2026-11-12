@@ -83,15 +83,37 @@ function columnOptions(entity: string, f: FieldSpec): string {
   return `{ ${opts.join(', ')} }`;
 }
 
+/**
+ * Swagger options. `type` is always explicit: TypeScript reflects `T | null`
+ * as `Object`, which would reach the frontend as `{ type: 'object' }`.
+ */
 function apiPropertyOptions(entity: string, f: FieldSpec, optional: boolean): string {
   const opts: string[] = [];
-  if (f.type === 'enum') opts.push(`enum: ${enumName(entity, f.name)}`);
-  if (f.type === 'date') opts.push(`type: String`, `format: 'date-time'`);
-  if (f.type === 'string') opts.push('maxLength: 255');
-  if (f.type === 'boolean' && !f.nullable) opts.push('default: false');
+  switch (f.type) {
+    case 'string':
+      opts.push('type: String', 'maxLength: 255');
+      break;
+    case 'text':
+      // fuse-schematics renders `format: 'textarea'` as a textarea field.
+      opts.push('type: String', `format: 'textarea'`);
+      break;
+    case 'number':
+      opts.push('type: Number');
+      break;
+    case 'boolean':
+      opts.push('type: Boolean');
+      if (!f.nullable) opts.push('default: false');
+      break;
+    case 'date':
+      opts.push('type: String', `format: 'date-time'`);
+      break;
+    case 'enum':
+      opts.push(`enum: ${enumName(entity, f.name)}`);
+      break;
+  }
   if (f.nullable) opts.push('nullable: true');
   const decorator = optional ? 'ApiPropertyOptional' : 'ApiProperty';
-  return opts.length ? `@${decorator}({ ${opts.join(', ')} })` : `@${decorator}()`;
+  return `@${decorator}({ ${opts.join(', ')} })`;
 }
 
 export function renderFields(entity: string, fields: FieldSpec[]): RenderedFields {

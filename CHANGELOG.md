@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Swagger: nullable maydonlar (`number?`, `text?`, `string?`, `deletedAt`, `TableQueryDto.sortField/sortOrder/globalFilter`) `{ type: 'object' }` bo'lib chiqardi (`T | null` → `Object`). Endi har bir maydonda aniq `type` bor; `text` → `{ type: 'string', format: 'textarea' }`.
+
 ## 0.1.0 (2026-11-12)
 
 Birinchi versiya.

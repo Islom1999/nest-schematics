@@ -48,7 +48,7 @@ describe('nest-crud', () => {
         'nest-crud',
         {
           name: 'SpYear',
-          fields: 'title:string,price:number,active:boolean,note:text?,startsAt:date?,status:enum(draft|published|in-review)',
+          fields: 'title:string,price:number,active:boolean,note:text?,startsAt:date?,status:enum(draft|published|in-review),sortOrder:number?',
         },
         projectTree(),
       );
@@ -83,12 +83,27 @@ describe('nest-crud', () => {
       );
       expect(dto).toContain("import { Type } from 'class-transformer';");
       expect(dto).toContain("import { SpYearStatus } from '@app/database';");
-      expect(dto).toMatch(/@ApiProperty\(\{ maxLength: 255 \}\)\s+@IsString\(\)\s+@MaxLength\(255\)\s+@IsNotEmpty\(\)\s+title: string;/);
+      expect(dto).toMatch(/@ApiProperty\(\{ type: String, maxLength: 255 \}\)\s+@IsString\(\)\s+@MaxLength\(255\)\s+@IsNotEmpty\(\)\s+title: string;/);
       expect(dto).toMatch(/@IsNumber\(\)\s+price: number;/);
       expect(dto).toMatch(/@IsOptional\(\)\s+@IsBoolean\(\)\s+active\?: boolean;/);
-      expect(dto).toMatch(/@ApiPropertyOptional\(\{ nullable: true \}\)\s+@IsOptional\(\)\s+@IsString\(\)\s+note\?: string \| null;/);
+      expect(dto).toMatch(/@ApiPropertyOptional\(\{ type: String, format: 'textarea', nullable: true \}\)\s+@IsOptional\(\)\s+@IsString\(\)\s+note\?: string \| null;/);
       expect(dto).toMatch(/@Type\(\(\) => Date\)\s+@IsDate\(\)\s+startsAt\?: Date \| null;/);
       expect(dto).toMatch(/@IsEnum\(SpYearStatus\)\s+status: SpYearStatus;/);
+    });
+
+    it('gives every field an explicit Swagger type (T | null reflects as Object)', () => {
+      const entity = tree.readContent('/libs/database/src/entities/sp-year.entity.ts');
+      const dto = tree.readContent('/apps/api/src/modules/sp-year/dto/create-sp-year.dto.ts');
+      for (const src of [entity, dto]) {
+        expect(src).toMatch(/@ApiProperty\(\{ type: Number \}\)\s+(@Column\([^)]*\)\s+|@IsNumber\(\)\s+)price: number;/);
+        expect(src).toContain("({ type: String, format: 'textarea', nullable: true })");
+        expect(src).toContain("({ type: String, format: 'date-time', nullable: true })");
+        expect(src).toContain('({ type: Boolean, default: false })');
+        expect(src).toContain('({ enum: SpYearStatus })');
+        expect(src).toMatch(/@ApiPropertyOptional\(\{ type: Number, nullable: true \}\)\s+(@Column\([^)]*\)\s+|@IsOptional\(\)\s+@IsNumber\(\)\s+)sortOrder\?: number \| null;/);
+        expect(src).not.toMatch(/@ApiProperty(Optional)?\(\{ nullable: true \}\)/);
+        expect(src).not.toContain('@ApiProperty()');
+      }
     });
 
     it('derives the update DTO with PartialType', () => {

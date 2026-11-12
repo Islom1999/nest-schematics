@@ -102,6 +102,13 @@ describe('nest-starter', () => {
       expect(tree.readContent('/shop-api/apps/api/src/config/swagger.ts')).toContain("setTitle('ShopApi API')");
     });
 
+    it('gives nullable base/query properties an explicit Swagger type', () => {
+      const entity = tree.readContent('/shop-api/libs/database/src/base.entity.ts');
+      expect(entity).toContain("@ApiPropertyOptional({ type: String, format: 'date-time', nullable: true })");
+      const query = tree.readContent('/shop-api/libs/common/src/dto/table-query.dto.ts');
+      expect(query.match(/type: (String|Number),\n\s+nullable: true,/g)?.length).toBe(3);
+    });
+
     it('serves the API under /api (frontend apiUrl)', () => {
       expect(tree.readContent('/shop-api/apps/api/src/main.ts')).toContain("app.setGlobalPrefix('api')");
     });

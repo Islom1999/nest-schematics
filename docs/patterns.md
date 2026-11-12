@@ -143,7 +143,7 @@ The parser lives in `src/utils/fields.ts` with no Nest/Angular dependency, so fu
 | `date` | `timestamptz` | `Date` | `@Type(() => Date)`, `IsDate` | `p-datepicker`, filter `dateIs`/`dateAfter` |
 | `enum(a\|b)` | PG enum `<entity>_<field>_enum` | `export enum <Entity><Field>` | `IsEnum` | `p-select`, filter `equals` |
 
-Update DTO = `PartialType(CreateDto)`. In JSON, properties are **camelCase** (`createdAt`, `isActive`); in the DB they are snake_case.
+Every field gets an explicit Swagger `type` (`T | null` would otherwise reflect as `object`); `text` is `{ type: 'string', format: 'textarea' }`, `date` is `format: 'date-time'`, `enum` is `enum: [...]`. Update DTO = `PartialType(CreateDto)`. In JSON, properties are **camelCase** (`createdAt`, `isActive`); in the DB they are snake_case.
 
 ---
 
