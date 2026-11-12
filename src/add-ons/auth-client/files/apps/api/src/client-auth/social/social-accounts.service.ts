@@ -76,7 +76,7 @@ export class SocialAccountsService {
         await this.users.query('UPDATE "users" SET "password_hash" = NULL WHERE "id" = $1', [user.id]);
       }
       await this.sessions.revokeAll(user.id, 'revoked');
-      this.auth.invalidateUser(user.id);
+      await this.auth.invalidateUser(user.id);
       this.logger.warn(`Unverified account ${user.id} was claimed by a verified ${key} identity; password and sessions cleared`);
     }
     const patch: Partial<User> = { emailVerified: true };

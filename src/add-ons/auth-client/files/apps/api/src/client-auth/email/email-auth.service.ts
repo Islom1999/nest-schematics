@@ -1,7 +1,7 @@
-import { BadRequestException, ConflictException, HttpException, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, HttpException, Inject, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { codeMail, DeviceInfo, hashPassword, LoginAttemptLimiter, MailService, verifyPassword } from '@app/common';
+import { CACHE_STORE, CacheStore, codeMail, DeviceInfo, hashPassword, LoginAttemptLimiter, MailService, verifyPassword } from '@app/common';
 import { normalizeEmail, User } from '@app/database';
 import { ClientAuthService } from '../client-auth.service';
 import { isUniqueViolation } from '../client-auth.types';
@@ -20,8 +20,8 @@ import { UserSessionsService } from '../user-sessions.service';
 @Injectable()
 export class EmailAuthService {
   private readonly logger = new Logger('EmailAuth');
-  private readonly attempts = new LoginAttemptLimiter(5, 15 * 60_000);
-  private readonly resetRequestsPerIp = new LoginAttemptLimiter(20, 60 * 60_000);
+  private readonly attempts: LoginAttemptLimiter;
+  private readonly resetRequestsPerIp: LoginAttemptLimiter;
 
   constructor(
     @InjectRepository(User) private readonly users: Repository<User>,
@@ -29,7 +29,13 @@ export class EmailAuthService {
     private readonly mail: MailService,
     private readonly auth: ClientAuthService,
     private readonly sessions: UserSessionsService,
-  ) {}
+    @Inject(CACHE_STORE) cache: CacheStore,
+  ) {
+    // Counted in Redis (all instances) with the redis add-on, else in memory.
+    const store = cache.shared ? cache : undefined;
+    this.attempts = new LoginAttemptLimiter(5, 15 * 60_000, store, 'user-email-sign-in');
+    this.resetRequestsPerIp = new LoginAttemptLimiter(20, 60 * 60_000, store, 'user-password-reset');
+  }
 
   async signUp(email: string, password: string, name: string | undefined, device: DeviceInfo): Promise<ClientAuthResponseDto> {
     const normalized = normalizeEmail(email);
@@ -51,7 +57,7 @@ export class EmailAuthService {
   async signIn(email: string, password: string, device: DeviceInfo): Promise<ClientAuthResponseDto> {
     const normalized = normalizeEmail(email);
     const key = `${normalized}|${device.ip}`;
-    this.attempts.assertAllowed(key);
+    await this.attempts.assertAllowed(key);
     const user = await this.users
       .createQueryBuilder('user')
       .addSelect('user.passwordHash')
@@ -59,18 +65,18 @@ export class EmailAuthService {
       .getOne();
     const valid = await verifyPassword(user?.passwordHash, password);
     if (!user || !valid) {
-      this.attempts.fail(key);
+      await this.attempts.fail(key);
       throw new UnauthorizedException('Invalid email or password');
     }
-    this.attempts.reset(key);
+    await this.attempts.reset(key);
     return this.auth.startSession(user, device);
   }
 
   /** Emails a reset code when the account exists; the answer never tells. */
   async forgotPassword(email: string, device: DeviceInfo): Promise<void> {
     const normalized = normalizeEmail(email);
-    this.resetRequestsPerIp.assertAllowed(device.ip);
-    this.resetRequestsPerIp.fail(device.ip);
+    await this.resetRequestsPerIp.assertAllowed(device.ip);
+    await this.resetRequestsPerIp.fail(device.ip);
     const user = await this.users.findOne({ where: { email: normalized } });
     if (!user || user.isBlocked) return;
     let code: string;
@@ -102,15 +108,15 @@ export class EmailAuthService {
   async resetPassword(email: string, code: string, newPassword: string, device: DeviceInfo): Promise<void> {
     const normalized = normalizeEmail(email);
     const key = `reset|${normalized}|${device.ip}`;
-    this.attempts.assertAllowed(key);
+    await this.attempts.assertAllowed(key);
     const user = await this.users.findOne({ where: { email: normalized } });
     if (!user || !(await this.otp.verify('password_reset', normalized, code, RESET_OTP_POLICY))) {
-      this.attempts.fail(key);
+      await this.attempts.fail(key);
       throw new BadRequestException('Invalid or expired code');
     }
-    this.attempts.reset(key);
+    await this.attempts.reset(key);
     await this.users.update(user.id, { passwordHash: await hashPassword(newPassword), emailVerified: true });
     await this.sessions.revokeAll(user.id, 'password_changed');
-    this.auth.invalidateUser(user.id);
+    await this.auth.invalidateUser(user.id);
   }
 }

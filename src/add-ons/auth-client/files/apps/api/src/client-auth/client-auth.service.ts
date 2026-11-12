@@ -1,7 +1,7 @@
-import { ForbiddenException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException, Inject, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { DeviceInfo, RevokeReason, TokenPair, TtlCache } from '@app/common';
+import { CACHE_STORE, CacheStore, DeviceInfo, RevokeReason, TokenPair } from '@app/common';
 import { User, UserSession } from '@app/database';
 import { SessionDto } from '../auth/dto/auth-response.dto';
 import { UserPrincipal } from './client-auth.types';
@@ -11,6 +11,8 @@ import { UserSessionsService } from './user-sessions.service';
 
 /** How long the guard trusts a checked session before reading it again. */
 const SESSION_CACHE_MS = 30_000;
+/** Cache keys: `user-session:<userId>:<sessionId>` (in memory, or Redis with the redis add-on). */
+const CACHE_PREFIX = 'user-session:';
 
 /**
  * Sessions of client users: starting one after a sign-in method proved who
@@ -19,13 +21,12 @@ const SESSION_CACHE_MS = 30_000;
  */
 @Injectable()
 export class ClientAuthService {
-  private readonly cache = new TtlCache<string, UserPrincipal>(SESSION_CACHE_MS);
-
   constructor(
     @InjectRepository(User) private readonly users: Repository<User>,
     private readonly sessions: UserSessionsService,
+    @Inject(CACHE_STORE) private readonly cache: CacheStore,
   ) {
-    sessions.onRevoke((ids) => ids.forEach((id) => this.cache.delete(id)));
+    sessions.onRevoke((_ids, revoked) => cache.delete(...revoked.map((s) => cacheKey(s.ownerId, s.id))));
   }
 
   /** New session (device) for a user who just signed in. Blocked users get 403. */
@@ -47,23 +48,20 @@ export class ClientAuthService {
   /**
    * Guard check: signature, expiry and `typ: 'user'` of the access token
    * (signed with USER_JWT_SECRET, so admin tokens fail here), then a live
-   * session of an active user. Cached per session for 30s; revoking through
-   * this process evicts the entry at once.
+   * session of an active user. Cached per session for 30s (shared across instances
+   * with the redis add-on); revoking evicts the entry at once.
    */
   async authenticate(accessToken: string): Promise<UserPrincipal> {
     const payload = await this.sessions.verifyAccess(accessToken);
-    const cached = this.cache.get(payload.sid);
-    if (cached) {
-      if (cached.id !== payload.sub) throw new UnauthorizedException('Invalid token');
-      return cached;
-    }
+    const cached = await this.cache.get<UserPrincipal>(cacheKey(payload.sub, payload.sid));
+    if (cached) return cached;
     const session = await this.sessions.findActive(payload.sid);
     if (!session || session.userId !== payload.sub) {
       throw new UnauthorizedException('Session expired or revoked');
     }
     await this.activeUser(session);
     const principal: UserPrincipal = { id: session.userId, sessionId: session.id };
-    this.cache.set(session.id, principal, Math.min(SESSION_CACHE_MS, session.expiresAt.getTime() - Date.now()));
+    await this.cache.set(cacheKey(session.userId, session.id), principal, Math.min(SESSION_CACHE_MS, session.expiresAt.getTime() - Date.now()));
     await this.sessions.touch(session.id);
     return principal;
   }
@@ -110,8 +108,8 @@ export class ClientAuthService {
   }
 
   /** Drops cached sessions of one user (blocked, deleted). */
-  invalidateUser(userId: string): void {
-    this.cache.deleteWhere((p) => p.id === userId);
+  invalidateUser(userId: string): Promise<void> {
+    return this.cache.deleteByPrefix(cacheKey(userId, ''));
   }
 
   // ── helpers ──────────────────────────────────────────────────────────
@@ -140,6 +138,10 @@ export class ClientAuthService {
       isNew,
     };
   }
+}
+
+function cacheKey(userId: string, sessionId: string): string {
+  return `${CACHE_PREFIX}${userId}:${sessionId}`;
 }
 
 export function toUserSessionDto(session: UserSession, isCurrent: boolean): SessionDto {

@@ -1,0 +1,23 @@
+{
+  "$schema": "http://json-schema.org/schema",
+  "$id": "SettingsAddonSchema",
+  "title": "Runtime settings and maintenance mode",
+  "type": "object",
+  "properties": {
+    "force": {
+      "type": "boolean",
+      "description": "Overwrite generated files that you have edited",
+      "default": false
+    },
+    "skipInstall": {
+      "type": "boolean",
+      "description": "Do not run npm install (this add-on has no dependencies)",
+      "default": false
+    },
+    "root": {
+      "type": "string",
+      "description": "Project directory relative to the current directory (used by `new --apps`)",
+      "default": ""
+    }
+  }
+}

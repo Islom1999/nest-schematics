@@ -102,8 +102,12 @@ describe('nest-starter: admin auth', () => {
     const service = read('/apps/api/src/auth/auth.service.ts');
     expect(service).not.toContain('SKELETON');
     expect(service).not.toContain("'env-admin'");
-    expect(service).toContain('new LoginAttemptLimiter(5, 15 * 60_000)');
+    expect(service).toContain('new LoginAttemptLimiter(5, 15 * 60_000, cache.shared ? cache : undefined');
     expect(service).toContain('SESSION_CACHE_MS = 30_000');
+    // Session cache behind the CACHE_STORE token (memory; Redis with the redis add-on).
+    expect(service).toContain('@Inject(CACHE_STORE) private readonly cache: CacheStore');
+    expect(read('/apps/api/src/api.module.ts')).toContain('CacheStoreModule');
+    expect(read('/libs/common/src/cache/cache.module.ts')).toContain('shared ?? new MemoryCacheStore()');
 
     const guard = read('/apps/api/src/auth/admin.guard.ts');
     expect(guard).toContain('this.auth.authenticate(token)');

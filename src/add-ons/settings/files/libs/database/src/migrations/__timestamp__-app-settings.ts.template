@@ -1,0 +1,39 @@
+import { MigrationInterface, QueryRunner } from 'typeorm';
+
+/**
+ * `app_settings` (npm run g -- settings) and the built-in `maintenance` row.
+ * Matches entities/app-setting.entity.ts.
+ */
+export class AppSettings<%= timestamp %> implements MigrationInterface {
+  name = 'AppSettings<%= timestamp %>';
+
+  public async up(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query(`
+      CREATE TABLE IF NOT EXISTS "app_settings" (
+        "id" uuid NOT NULL DEFAULT gen_random_uuid(),
+        "created_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+        "updated_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+        "deleted_at" TIMESTAMP WITH TIME ZONE,
+        "key" character varying(100) NOT NULL,
+        "value" jsonb,
+        "description" character varying(255),
+        "is_public" boolean NOT NULL DEFAULT false,
+        CONSTRAINT "<%= primaryKey %>" PRIMARY KEY ("id")
+      )
+    `);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "<%= deletedAtIndex %>" ON "app_settings" ("deleted_at")`);
+    await queryRunner.query(
+      `CREATE UNIQUE INDEX IF NOT EXISTS "UQ_app_settings_key" ON "app_settings" ("key") WHERE "deleted_at" IS NULL`,
+    );
+    await queryRunner.query(`
+      INSERT INTO "app_settings" ("key", "value", "description", "is_public")
+      SELECT 'maintenance', '{"enabled": false, "message": ""}'::jsonb,
+             'Maintenance mode: client routes answer 503 with the message while enabled', true
+      WHERE NOT EXISTS (SELECT 1 FROM "app_settings" WHERE "key" = 'maintenance' AND "deleted_at" IS NULL)
+    `);
+  }
+
+  public async down(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query(`DROP TABLE IF EXISTS "app_settings"`);
+  }
+}
