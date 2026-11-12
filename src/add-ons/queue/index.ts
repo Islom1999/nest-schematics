@@ -24,7 +24,8 @@ export const QUEUE_DEPENDENCIES = {
  * `npm run g -- queue` (needs redis): BullMQ via @nestjs/bullmq in
  * libs/common/src/queue — QueueModule.forRoot()/forFeature(), the generic
  * `JobsService.enqueue(name, data, opts)` (3 attempts, exponential backoff),
- * `@JobHandler()` processors and `GET admin/queues`. Jobs run in apps/worker
+ * `@JobHandler()` processors and `admin/queues` (counts, job list, retry, clean,
+ * pause / resume; `queue.read` and `queue.write`). Jobs run in apps/worker
  * when it is installed (before or after this add-on), otherwise in the api.
  * Without REDIS_URL an in-memory driver keeps the app working.
  */
@@ -39,7 +40,7 @@ export function queue(options: Schema): Rule {
       addBarrelExport(host, `${project.commonSrc}/index.ts`, 'queue');
       wireQueueProcessors(host, context.logger, root);
       addModuleImport(host, project.apiModule, 'QueuesAdminModule', './modules/queues/queues-admin.module');
-      addPermissions(host, 'queue', ['read'], root);
+      addPermissions(host, 'queue', ['read', 'write'], root);
       addPackageJson(host, { dependencies: QUEUE_DEPENDENCIES }, root);
       recordFeature(host, 'queue', {}, undefined, root);
       // notifications installed first: its work moves onto jobs
@@ -57,7 +58,7 @@ export function queue(options: Schema): Rule {
             (hasWorker(host, root)
               ? 'Jobs run in apps/worker (add handler providers to WorkerModule).'
               : 'Jobs run in the api; after "npm run g -- worker" they move to apps/worker.') +
-            ' Admin: GET /api/admin/queues (queue.read).',
+            ' Admin: GET /api/admin/queues, jobs, retry, clean, pause, resume (queue.read / queue.write).',
         );
       },
     ]);

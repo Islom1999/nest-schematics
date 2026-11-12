@@ -66,6 +66,9 @@ interface PartSpec {
   entityImports?: NamedImport[];
   dtoField?: string;
   dtoMap?: string;
+  /** Fields of the admin create/update body (`admin/dto/create-user.dto.ts`) and the imports they use. */
+  adminDtoField?: string;
+  adminDtoImports?: NamedImport[];
 }
 
 const PARTS: Record<UserPart, PartSpec> = {
@@ -85,6 +88,19 @@ const PARTS: Record<UserPart, PartSpec> = {
       `phone: string | null;`,
     ].join('\n'),
     dtoMap: 'phone: user.phone,',
+    adminDtoField: [
+      `@ApiPropertyOptional({ type: String, nullable: true, example: '+998901234567', description: 'Normalised to E.164; unique' })`,
+      `@IsOptional()`,
+      `@Transform(({ value }) => (typeof value === 'string' ? (normalizePhone(value) ?? value) : value))`,
+      `@Matches(/^\\+\\d{9,15}$/, { message: 'phone must be an international number, e.g. +998901234567' })`,
+      `phone?: string | null;`,
+    ].join('\n'),
+    adminDtoImports: [
+      { name: 'ApiPropertyOptional', from: '@nestjs/swagger' },
+      { name: 'Transform', from: 'class-transformer' },
+      { name: 'Matches', from: 'class-validator' },
+      { name: 'normalizePhone', from: '@app/common' },
+    ],
   },
   email: {
     columns: [
@@ -122,6 +138,23 @@ const PARTS: Record<UserPart, PartSpec> = {
       `emailVerified: boolean;`,
     ].join('\n'),
     dtoMap: 'email: user.email,\nemailVerified: user.emailVerified,',
+    adminDtoField: [
+      `@ApiPropertyOptional({ type: String, nullable: true, example: 'user@example.com', description: 'Stored lowercased; unique' })`,
+      `@IsOptional()`,
+      `@Transform(({ value }) => (typeof value === 'string' ? value.trim().toLowerCase() : value))`,
+      `@IsEmail()`,
+      `@MaxLength(254)`,
+      `email?: string | null;`,
+      ``,
+      `@ApiPropertyOptional({ description: 'The admin vouches for the address' })`,
+      `@IsOptional()`,
+      `@IsBoolean()`,
+      `emailVerified?: boolean;`,
+    ].join('\n'),
+    adminDtoImports: [
+      { name: 'Transform', from: 'class-transformer' },
+      { name: 'IsEmail', from: 'class-validator' },
+    ],
   },
   password: {
     columns: [{ name: 'password_hash', sql: '"password_hash" character varying(255)' }],
@@ -131,6 +164,15 @@ const PARTS: Record<UserPart, PartSpec> = {
       `@Column({ type: 'varchar', length: 255, nullable: true, select: false })`,
       `passwordHash: string | null;`,
     ].join('\n'),
+    adminDtoField: [
+      `@ApiPropertyOptional({ description: 'Hashed with argon2id; omit to keep or leave without a password', minLength: 8, maxLength: 128 })`,
+      `@IsOptional()`,
+      `@IsString()`,
+      `@MinLength(8)`,
+      `@MaxLength(128)`,
+      `password?: string;`,
+    ].join('\n'),
+    adminDtoImports: [{ name: 'MinLength', from: 'class-validator' }],
   },
   google: {
     columns: [{ name: 'google_sub', sql: '"google_sub" character varying(255)' }],
@@ -208,7 +250,12 @@ const MIGRATIONS_DIR = 'libs/database/src/migrations';
 const CLIENT_AUTH_DIR = 'apps/api/src/client-auth';
 const USER_ENTITY = 'libs/database/src/entities/user.entity.ts';
 /** Files later runs extend at markers: created once, never overwritten. */
-const CREATE_ONLY = [USER_ENTITY, `${CLIENT_AUTH_DIR}/dto/client-user.dto.ts`, `${CLIENT_AUTH_DIR}/client-auth.module.ts`];
+const CREATE_ONLY = [
+  USER_ENTITY,
+  `${CLIENT_AUTH_DIR}/dto/client-user.dto.ts`,
+  `${CLIENT_AUTH_DIR}/admin/dto/create-user.dto.ts`,
+  `${CLIENT_AUTH_DIR}/client-auth.module.ts`,
+];
 
 /** Method directories under client-auth/ and the methods that need them. */
 const METHOD_DIRS: Record<string, AuthClientMethod[]> = {
@@ -445,12 +492,17 @@ export function authClient(options: Schema): Rule {
 
       // Columns, DTO fields and the migration of the requested methods.
       const dtoPath = `${prefix}${CLIENT_AUTH_DIR}/dto/client-user.dto.ts`;
+      const adminDtoPath = `${prefix}${CLIENT_AUTH_DIR}/admin/dto/create-user.dto.ts`;
       for (const p of wanted) {
         const spec = PARTS[p];
         insertAtMarker(host, entityPath, '// @ns:user-columns', `\n${spec.entity}`, spec.entityKey);
         if (spec.entityImports) addNamedImports(host, entityPath, spec.entityImports);
         if (spec.dtoField) insertAtMarker(host, dtoPath, '// @ns:client-user-fields', `\n${spec.dtoField}`, spec.dtoField);
         if (spec.dtoMap) insertAtMarker(host, dtoPath, '// @ns:client-user-map', spec.dtoMap);
+        if (spec.adminDtoField) {
+          insertAtMarker(host, adminDtoPath, '// @ns:admin-user-fields', `\n${spec.adminDtoField}`, spec.adminDtoField);
+          if (spec.adminDtoImports) addNamedImports(host, adminDtoPath, spec.adminDtoImports);
+        }
       }
 
       const last = Math.max(0, ...existing.map((m) => m.ts));

@@ -42,6 +42,59 @@ export interface QueueCounts {
   delayed: number;
   completed: number;
   failed: number;
+  /** Workers take no new jobs until `resume()`. */
+  paused: boolean;
+}
+
+/** Job states `listJobs()` can filter by. */
+export const JOB_STATUSES = ['waiting', 'active', 'delayed', 'completed', 'failed'] as const;
+export type JobStatus = (typeof JOB_STATUSES)[number];
+
+/** States `clean()` can remove (never `active`). */
+export const CLEANABLE_STATUSES = ['completed', 'failed', 'delayed', 'waiting'] as const;
+export type CleanableStatus = (typeof CLEANABLE_STATUSES)[number];
+
+/** One job as the admin panel sees it. `data` has secret-looking keys masked. */
+export interface JobInfo {
+  id: string;
+  name: string;
+  queue: string;
+  status: JobStatus;
+  data: unknown;
+  /** Runs started so far. */
+  attemptsMade: number;
+  /** Runs allowed (including the first), null when unknown. */
+  attempts: number | null;
+  failedReason: string | null;
+  /** ISO dates; null when the job has not reached that point. */
+  createdAt: string | null;
+  processedAt: string | null;
+  finishedAt: string | null;
+}
+
+export interface JobPage {
+  /** Jobs in that state in total, for the pager. */
+  count: number;
+  data: JobInfo[];
+}
+
+const SECRET_KEY = /pass|secret|token|otp|code|authorization|api[-_]?key|cookie/i;
+const MAX_TEXT = 500;
+
+/**
+ * Job data for the admin panel: values of keys that look secret (password,
+ * token, otp, code...) become `***`, long strings are cut, depth is limited.
+ */
+export function redactJobData(value: unknown, depth = 0): unknown {
+  if (typeof value === 'string') return value.length > MAX_TEXT ? `${value.slice(0, MAX_TEXT)}...` : value;
+  if (value === null || typeof value !== 'object') return value;
+  if (depth >= 5) return '[truncated]';
+  if (Array.isArray(value)) return value.slice(0, 50).map((v) => redactJobData(v, depth + 1));
+  const out: Record<string, unknown> = {};
+  for (const [key, v] of Object.entries(value as Record<string, unknown>)) {
+    out[key] = SECRET_KEY.test(key) && v != null ? '***' : redactJobData(v, depth + 1);
+  }
+  return out;
 }
 
 export interface QueueModuleOptions {

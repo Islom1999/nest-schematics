@@ -131,6 +131,25 @@ describe('auth-client add-on', () => {
       expect(JSON.parse(tree.readContent('/nest-schematics.json')).features['auth-client'].options.methods).toEqual(['phone', 'email']);
     });
 
+    it('adds admin create, edit, delete and an unpaged list, with fields of the installed methods only', () => {
+      const admin = tree.readContent(`${CA}/admin/users.controller.ts`);
+      expect(admin).toMatch(/@AdminAccess\('read'\)\n {2}@Get\(\)\n/);
+      for (const route of ['@Post()', "@Patch(':id')", "@Delete(':id')"]) expect(admin).toContain(`@AdminAccess('write')\n  ${route}`);
+      expect(admin.indexOf("@Get('options')")).toBeLessThan(admin.indexOf("@Get(':id')"));
+      const create = tree.readContent(`${CA}/admin/dto/create-user.dto.ts`);
+      expect(create).toMatch(/phone\?: string \| null;/);
+      expect(create).toMatch(/email\?: string \| null;/);
+      expect(create).toMatch(/password\?: string;/);
+      expect(create).toContain("import { normalizePhone } from '@app/common';");
+      expect(create).not.toContain('googleSub');
+      expect(tree.readContent(`${CA}/admin/dto/update-user.dto.ts`)).toContain('PartialType(CreateUserDto)');
+      expect(tree.readContent(`${CA}/admin/dto/user-list-query.dto.ts`)).toContain('USER_LIST_MAX = 1000');
+      const service = tree.readContent(`${CA}/admin/users.service.ts`);
+      expect(service).toContain('hashPassword(password)');
+      expect(service).toContain("revokeAll(id, 'deleted')");
+      expect(tree.exists(`${CA}/admin/users.service.spec.ts`)).toBeTrue();
+    });
+
     it('has no master code and never returns the OTP', () => {
       for (const f of ['phone/phone-auth.service.ts', 'otp.service.ts', 'phone/phone-auth.controller.ts']) {
         const text = tree.readContent(`${CA}/${f}`);

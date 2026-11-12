@@ -38,10 +38,19 @@ describe('queue add-on', () => {
     const api = tree.readContent(API_MODULE);
     expect(api).toContain('QueueModule.forRoot(),');
     expect(api).toContain("import { QueuesAdminModule } from './modules/queues/queues-admin.module';");
-    expect(tree.readContent('/libs/common/src/permissions.ts')).toContain("{ resource: 'queue', actions: ['read'] },");
-    expect(tree.readContent('/apps/api/src/modules/queues/queues-admin.controller.ts')).toContain(
-      "@AdminResource('queues', { read: ['queue.read'], write: [] })",
-    );
+    expect(tree.readContent('/libs/common/src/permissions.ts')).toContain("{ resource: 'queue', actions: ['read', 'write'] },");
+    const admin = tree.readContent('/apps/api/src/modules/queues/queues-admin.controller.ts');
+    expect(admin).toContain("@AdminResource('queues', { read: ['queue.read'], write: ['queue.write'] })");
+    // Reads need queue.read; retry, clean, pause and resume need queue.write.
+    expect(admin).toContain("@AdminAccess('read')\n  @Get(':queue/jobs')");
+    for (const route of [':queue/jobs/:id/retry', ':queue/clean', ':queue/pause', ':queue/resume']) {
+      expect(admin).toContain(`@AdminAccess('write')\n  @HttpCode(HttpStatus.OK)\n  @Post('${route}')`);
+    }
+    expect(admin).toContain('export class CleanQueueDto');
+    expect(admin).toContain("apiEnum(QueueJobStatus, 'QueueJobStatus')");
+    const jobs = tree.readContent('/libs/common/src/queue/jobs.service.ts');
+    for (const method of ['listJobs', 'retryJob', 'clean', 'pauseQueue', 'resumeQueue']) expect(jobs).toContain(`async ${method}(`);
+    expect(tree.exists('/libs/common/src/queue/jobs.service.spec.ts')).toBeTrue();
     const pkg = JSON.parse(tree.readContent('/package.json')) as Record<string, Record<string, string>>;
     expect(pkg.dependencies['bullmq']).toBe('^5.81.0');
     expect(pkg.dependencies['@nestjs/bullmq']).toBe('^11.0.5');
