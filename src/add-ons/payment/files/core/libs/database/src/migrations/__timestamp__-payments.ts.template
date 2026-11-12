@@ -1,0 +1,92 @@
+import { MigrationInterface, QueryRunner } from 'typeorm';
+
+/**
+ * Payments core (npm run g -- payment <provider>): payment_invoices and
+ * payment_transactions. Matches entities/payment-invoice.entity.ts and
+ * entities/payment-transaction.entity.ts.
+ */
+export class Payments<%= timestamp %> implements MigrationInterface {
+  name = 'Payments<%= timestamp %>';
+
+  public async up(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`);
+    await queryRunner.query(`
+      CREATE TABLE "payment_invoices" (
+        "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
+        "created_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+        "updated_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+        "deleted_at" TIMESTAMP WITH TIME ZONE,
+        "number" BIGSERIAL NOT NULL,
+        "user_id" uuid NOT NULL,
+        "amount" bigint NOT NULL,
+        "purpose" character varying(16) NOT NULL,
+        "target_type" character varying(64),
+        "target_id" character varying(64),
+        "status" character varying(16) NOT NULL,
+        "provider" character varying(20) NOT NULL,
+        "expires_at" TIMESTAMP WITH TIME ZONE NOT NULL,
+        "paid_at" TIMESTAMP WITH TIME ZONE,
+        CONSTRAINT "<%= invoicesPk %>" PRIMARY KEY ("id")
+      )
+    `);
+    // Invoice numbers start at 1 000 000 000; user account numbers stay below.
+    await queryRunner.query(`ALTER SEQUENCE "payment_invoices_number_seq" START WITH 1000000000 RESTART WITH 1000000000`);
+    await queryRunner.query(`CREATE INDEX "<%= invoicesDeletedAt %>" ON "payment_invoices" ("deleted_at")`);
+    await queryRunner.query(`CREATE UNIQUE INDEX "UQ_payment_invoices_number" ON "payment_invoices" ("number")`);
+    await queryRunner.query(`CREATE INDEX "IDX_payment_invoices_user_id" ON "payment_invoices" ("user_id")`);
+    await queryRunner.query(
+      `ALTER TABLE "payment_invoices" ADD CONSTRAINT "FK_payment_invoices_user_id" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE NO ACTION`,
+    );
+
+    await queryRunner.query(`
+      CREATE TABLE "payment_transactions" (
+        "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
+        "created_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+        "updated_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+        "deleted_at" TIMESTAMP WITH TIME ZONE,
+        "number" BIGSERIAL NOT NULL,
+        "provider" character varying(20) NOT NULL,
+        "external_id" character varying(64) NOT NULL,
+        "amount" bigint NOT NULL,
+        "state" integer NOT NULL,
+        "status" character varying(16) NOT NULL,
+        "purpose" character varying(16) NOT NULL,
+        "target_type" character varying(64),
+        "target_id" character varying(64),
+        "user_id" uuid,
+        "invoice_id" uuid,
+        "account" character varying(64),
+        "provider_time" TIMESTAMP WITH TIME ZONE,
+        "performed_at" TIMESTAMP WITH TIME ZONE,
+        "cancelled_at" TIMESTAMP WITH TIME ZONE,
+        "reason" integer,
+        "raw" jsonb,
+        CONSTRAINT "<%= transactionsPk %>" PRIMARY KEY ("id")
+      )
+    `);
+    await queryRunner.query(`CREATE INDEX "<%= transactionsDeletedAt %>" ON "payment_transactions" ("deleted_at")`);
+    await queryRunner.query(
+      `CREATE UNIQUE INDEX "UQ_payment_transactions_provider_external_id" ON "payment_transactions" ("provider", "external_id")`,
+    );
+    await queryRunner.query(`CREATE UNIQUE INDEX "UQ_payment_transactions_number" ON "payment_transactions" ("number")`);
+    await queryRunner.query(`CREATE INDEX "IDX_payment_transactions_user_id" ON "payment_transactions" ("user_id")`);
+    await queryRunner.query(`CREATE INDEX "IDX_payment_transactions_invoice_id" ON "payment_transactions" ("invoice_id")`);
+    await queryRunner.query(
+      `CREATE INDEX "IDX_payment_transactions_provider_time" ON "payment_transactions" ("provider", "provider_time")`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "payment_transactions" ADD CONSTRAINT "FK_payment_transactions_user_id" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE NO ACTION`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "payment_transactions" ADD CONSTRAINT "FK_payment_transactions_invoice_id" FOREIGN KEY ("invoice_id") REFERENCES "payment_invoices"("id") ON DELETE RESTRICT ON UPDATE NO ACTION`,
+    );
+  }
+
+  public async down(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query(`ALTER TABLE "payment_transactions" DROP CONSTRAINT "FK_payment_transactions_invoice_id"`);
+    await queryRunner.query(`ALTER TABLE "payment_transactions" DROP CONSTRAINT "FK_payment_transactions_user_id"`);
+    await queryRunner.query(`DROP TABLE "payment_transactions"`);
+    await queryRunner.query(`ALTER TABLE "payment_invoices" DROP CONSTRAINT "FK_payment_invoices_user_id"`);
+    await queryRunner.query(`DROP TABLE "payment_invoices"`);
+  }
+}

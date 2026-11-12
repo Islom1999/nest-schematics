@@ -16,6 +16,7 @@ import {
   scheduleInstall,
 } from '../../utils/ops';
 import { registerApiLogCleanup } from './cleanup';
+import { registerPaymentLogging } from '../payment/log';
 import { Schema } from './schema';
 
 const MIGRATIONS_DIR = 'libs/database/src/migrations';
@@ -104,6 +105,8 @@ export function apiLogs(options: Schema): Rule {
       );
 
       registerApiLogCleanup(host, context.logger, root);
+      // Payment webhooks installed earlier get @LogPayment() (payment does it itself when it comes later).
+      registerPaymentLogging(host, root);
       recordFeature(host, 'api-logs', {}, undefined, root);
       scheduleInstall(context, options.skipInstall, root);
       return host;

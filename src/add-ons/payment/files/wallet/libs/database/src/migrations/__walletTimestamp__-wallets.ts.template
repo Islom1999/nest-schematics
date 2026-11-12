@@ -1,0 +1,68 @@
+import { MigrationInterface, QueryRunner } from 'typeorm';
+
+/**
+ * Wallets (npm run g -- payment <provider> --mode wallet): wallets and the
+ * wallet_transactions ledger. Matches entities/wallet.entity.ts and
+ * entities/wallet-transaction.entity.ts.
+ */
+export class Wallets<%= walletTimestamp %> implements MigrationInterface {
+  name = 'Wallets<%= walletTimestamp %>';
+
+  public async up(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query(`
+      CREATE TABLE "wallets" (
+        "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
+        "created_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+        "updated_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+        "deleted_at" TIMESTAMP WITH TIME ZONE,
+        "user_id" uuid NOT NULL,
+        "balance" bigint NOT NULL,
+        CONSTRAINT "CHK_wallets_balance_non_negative" CHECK ("balance" >= 0),
+        CONSTRAINT "<%= walletsPk %>" PRIMARY KEY ("id")
+      )
+    `);
+    await queryRunner.query(`CREATE INDEX "<%= walletsDeletedAt %>" ON "wallets" ("deleted_at")`);
+    await queryRunner.query(`CREATE UNIQUE INDEX "UQ_wallets_user_id" ON "wallets" ("user_id")`);
+    await queryRunner.query(
+      `ALTER TABLE "wallets" ADD CONSTRAINT "FK_wallets_user_id" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE NO ACTION`,
+    );
+
+    await queryRunner.query(`
+      CREATE TABLE "wallet_transactions" (
+        "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
+        "created_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+        "updated_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+        "deleted_at" TIMESTAMP WITH TIME ZONE,
+        "wallet_id" uuid NOT NULL,
+        "amount" bigint NOT NULL,
+        "type" character varying(16) NOT NULL,
+        "payment_transaction_id" uuid,
+        "reference" character varying(128),
+        "note" character varying(255),
+        "balance_after" bigint NOT NULL,
+        CONSTRAINT "<%= ledgerPk %>" PRIMARY KEY ("id")
+      )
+    `);
+    await queryRunner.query(`CREATE INDEX "<%= ledgerDeletedAt %>" ON "wallet_transactions" ("deleted_at")`);
+    await queryRunner.query(
+      `CREATE INDEX "IDX_wallet_transactions_wallet_id_created_at" ON "wallet_transactions" ("wallet_id", "created_at")`,
+    );
+    await queryRunner.query(
+      `CREATE INDEX "IDX_wallet_transactions_payment_transaction_id" ON "wallet_transactions" ("payment_transaction_id")`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "wallet_transactions" ADD CONSTRAINT "FK_wallet_transactions_wallet_id" FOREIGN KEY ("wallet_id") REFERENCES "wallets"("id") ON DELETE RESTRICT ON UPDATE NO ACTION`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "wallet_transactions" ADD CONSTRAINT "FK_wallet_transactions_payment_transaction_id" FOREIGN KEY ("payment_transaction_id") REFERENCES "payment_transactions"("id") ON DELETE RESTRICT ON UPDATE NO ACTION`,
+    );
+  }
+
+  public async down(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query(`ALTER TABLE "wallet_transactions" DROP CONSTRAINT "FK_wallet_transactions_payment_transaction_id"`);
+    await queryRunner.query(`ALTER TABLE "wallet_transactions" DROP CONSTRAINT "FK_wallet_transactions_wallet_id"`);
+    await queryRunner.query(`DROP TABLE "wallet_transactions"`);
+    await queryRunner.query(`ALTER TABLE "wallets" DROP CONSTRAINT "FK_wallets_user_id"`);
+    await queryRunner.query(`DROP TABLE "wallets"`);
+  }
+}

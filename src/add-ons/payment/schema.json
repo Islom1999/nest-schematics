@@ -1,0 +1,37 @@
+{
+  "$schema": "http://json-schema.org/schema",
+  "$id": "PaymentAddonSchema",
+  "title": "Payments (Payme / Click) with invoices, a state machine and wallets",
+  "type": "object",
+  "properties": {
+    "provider": {
+      "type": "string",
+      "enum": ["payme", "click"],
+      "description": "Payment provider to add: payme (Payme Business Merchant API) or click (Click SHOP API)",
+      "$default": {
+        "$source": "argv",
+        "index": 0
+      }
+    },
+    "mode": {
+      "type": "string",
+      "enum": ["wallet", "order", "both"],
+      "description": "wallet = user balances topped up by payments (default on the first run), order = pay your own PaymentTarget (orders...), both. Modes add up across runs"
+    },
+    "force": {
+      "type": "boolean",
+      "description": "Overwrite generated files that you have edited",
+      "default": false
+    },
+    "skipInstall": {
+      "type": "boolean",
+      "description": "Do not run npm install",
+      "default": false
+    },
+    "root": {
+      "type": "string",
+      "description": "Project directory relative to the current directory",
+      "default": ""
+    }
+  }
+}
