@@ -51,6 +51,18 @@ Register it in `src/collection.json` (`"factory": "./add-ons/<name>/index#<camel
      `MARKERS.healthCheck` (`/api/health`) and `MARKERS.healthReady` (`/api/health/ready`)
      in `apps/api/src/health/health.controller.ts`; env of the api container in
      docker-compose: `MARKERS.composeApiEnvironment`;
+   - admin sidebar and global search: append an entry to `NAVIGATION`
+     (`apps/api/src/navigation/navigation.registry.ts`) with `insertAtMarker` at `MARKERS.navigation`:
+     `{ id, title, icon, link, permission?, children? }` (`permission` = key or keys the admin needs; the
+     entry is hidden without them). A search area is an `@Injectable()` class extending `SearchProviderBase`
+     (`apps/api/src/search`), with its `permissions` and `search(query, limit)`; add the class to `providers`
+     of SearchModule at `MARKERS.searchProviders`. Both routes are in the admin Swagger document already;
+     a client-facing prefix has to be exempt from maintenance mode if it must keep working there;
+   - mail for the admin auth (password reset): the starter has the `AdminMailer` port (`ADMIN_MAILER` in
+     `@app/common`) and injects it with `@Optional()`. The mail add-on provides it from its own `MailModule`,
+     so there is nothing to wire in either install order. Another add-on that needs admin mail does the same:
+     port in the starter, implementation in the add-on's module, `@Optional()` at the user. To tell an admin
+     something in the panel, inject `AdminNotificationsService` (global) and call `notify(adminId, { title, link })`;
    - caches and counters that must be shared between instances: inject `CACHE_STORE`
      (`CacheStore` from `@app/common`), never a module-level `Map`/`TtlCache`. It is in
      memory by default and Redis once the `redis` add-on is installed, in either order;

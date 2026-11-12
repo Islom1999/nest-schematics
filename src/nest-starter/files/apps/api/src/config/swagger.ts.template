@@ -27,11 +27,13 @@ export const SWAGGER_DOCUMENTS: SwaggerDocumentSpec[] = [
     title: '<%= classify(name) %> Admin API',
     // No `*` + `/` in descriptions: generators copy them into code comments.
     description:
-      'Admin panel API: routes under /api/admin and /api/auth (Bearer JWT). Tables use ' +
+      'Admin panel API: routes under /api/admin, /api/auth, /api/navigation and /api/search (Bearer JWT). Tables use ' +
       '`POST <resource>/pagination` with a PrimeNG lazy-load body and return `{ count, data }`.',
     prefixes: [
       'admin',
       'auth',
+      'navigation',
+      'search',
       // @ns:swagger-admin
     ],
   },

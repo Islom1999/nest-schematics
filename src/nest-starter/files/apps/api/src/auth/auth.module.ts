@@ -2,7 +2,7 @@ import { Global, Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { Admin, AdminRole, AdminSession } from '@app/database';
+import { Admin, AdminPasswordReset, AdminRole, AdminSession } from '@app/database';
 import { AdminBootstrapService } from './admin-bootstrap.service';
 import { AdminGuard } from './admin.guard';
 import { AdminSessionsService } from './admin-sessions.service';
@@ -11,6 +11,7 @@ import { AdminsService } from './admins/admins.service';
 import { ADMIN_AUTH_OPTIONS, adminAuthOptions } from './auth.config';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { PasswordResetService } from './password-reset.service';
 import { PermissionsController } from './roles/permissions.controller';
 import { RolesController } from './roles/roles.controller';
 import { RolesService } from './roles/roles.service';
@@ -25,12 +26,13 @@ import { RolesService } from './roles/roles.service';
  */
 @Global()
 @Module({
-  imports: [JwtModule.register({}), TypeOrmModule.forFeature([Admin, AdminRole, AdminSession])],
+  imports: [JwtModule.register({}), TypeOrmModule.forFeature([Admin, AdminRole, AdminSession, AdminPasswordReset])],
   controllers: [AuthController, AdminsController, RolesController, PermissionsController],
   providers: [
     { provide: ADMIN_AUTH_OPTIONS, inject: [ConfigService], useFactory: adminAuthOptions },
     AdminSessionsService,
     AuthService,
+    PasswordResetService,
     AdminGuard,
     AdminsService,
     RolesService,

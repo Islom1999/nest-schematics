@@ -106,6 +106,10 @@ export class EnvironmentVariables {
   @IsOptional()
   @IsString()
   ADMIN_PASSWORD?: string;
+
+  @IsOptional()
+  @IsString()
+  ADMIN_APP_URL?: string;
   // @ns:env
 }
 

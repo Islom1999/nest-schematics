@@ -1,3 +1,4 @@
+export * from './admin-mailer';
 export * from './device-info';
 export * from './duration';
 export * from './hash';

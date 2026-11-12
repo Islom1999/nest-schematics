@@ -76,6 +76,7 @@ export function mail(options: Schema): Rule {
 
     const wire: Rule = (host: Tree) => {
       addBarrelExport(host, `${project.commonSrc}/index.ts`, 'mail');
+      addBarrelExport(host, `${mailDir}/index.ts`, 'mail-admin-mailer');
       addModuleImport(host, project.apiModule, 'MailModule', '@app/common');
 
       if (spec) {

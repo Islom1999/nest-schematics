@@ -49,7 +49,7 @@ describe('settings add-on', () => {
     expect(service).toContain('@Inject(CACHE_STORE) private readonly cache: CacheStore');
     expect(service).toContain('SETTINGS_CACHE_MS = 10_000');
     const guard = tree.readContent('/libs/common/src/settings/maintenance.guard.ts');
-    expect(guard).toContain("['admin', 'auth', 'health', 'settings/public', 'internal']");
+    expect(guard).toContain("['admin', 'auth', 'navigation', 'search', 'health', 'settings/public', 'internal']");
     expect(guard).toContain("code: 'MAINTENANCE'");
   });
 
