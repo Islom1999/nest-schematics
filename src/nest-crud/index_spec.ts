@@ -73,7 +73,9 @@ describe('nest-crud', () => {
       expect(entity).toContain("@Column({ type: 'timestamptz', nullable: true })\n  startsAt?: Date | null;");
       expect(entity).toContain('export enum SpYearStatus {');
       expect(entity).toContain("InReview = 'in-review',");
-      expect(entity).toContain("enumName: 'sp_year_status_enum'");
+      // TypeORM's default type name (sp_year_status_enum); an explicit enumName makes migration:generate diff.
+      expect(entity).toContain("@Column({ type: 'enum', enum: SpYearStatus })");
+      expect(entity).not.toContain('sp_year_status_enum');
     });
 
     it('adds class-validator and Swagger decorators to the create DTO', () => {
@@ -99,7 +101,7 @@ describe('nest-crud', () => {
         expect(src).toContain("({ type: String, format: 'textarea', nullable: true })");
         expect(src).toContain("({ type: String, format: 'date-time', nullable: true })");
         expect(src).toContain('({ type: Boolean, default: false })');
-        expect(src).toContain('({ enum: SpYearStatus })');
+        expect(src).toContain("({ enum: SpYearStatus, enumName: 'SpYearStatus' })");
         expect(src).toMatch(/@ApiPropertyOptional\(\{ type: Number, nullable: true \}\)\s+(@Column\([^)]*\)\s+|@IsOptional\(\)\s+@IsNumber\(\)\s+)sortOrder\?: number \| null;/);
         expect(src).not.toMatch(/@ApiProperty(Optional)?\(\{ nullable: true \}\)/);
         expect(src).not.toContain('@ApiProperty()');

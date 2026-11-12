@@ -1,11 +1,11 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { <%= classify(name) %> } from '@app/database';
+import { <%= [...moduleEntities].sort().join(', ') %> } from '@app/database';
 import { <%= classify(name) %>Controller } from './<%= dasherize(name) %>.controller';
 import { <%= classify(name) %>Service } from './<%= dasherize(name) %>.service';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([<%= classify(name) %>])],
+  imports: [TypeOrmModule.forFeature([<%= moduleEntities.join(', ') %>])],
   controllers: [<%= classify(name) %>Controller],
   providers: [<%= classify(name) %>Service],
   exports: [<%= classify(name) %>Service],

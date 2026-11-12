@@ -1,7 +1,7 @@
 import { Body, Delete, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Post, Put, Query, Type } from '@nestjs/common';
 import { ApiBody, ApiExtraModels, ApiOkResponse, ApiOperation, getSchemaPath } from '@nestjs/swagger';
 import { AdminAccess } from '../decorators/admin-access.decorator';
-import { DeleteResultDto, TableQueryDto } from '../dto/table-query.dto';
+import { DeleteResultDto, OptionDto, OptionsQueryDto, TableQueryDto } from '../dto/table-query.dto';
 import { validateDto } from '../validation/validate-dto';
 import { BaseCrudService } from './base-crud.service';
 import { BaseEntity } from '@app/database';
@@ -20,6 +20,7 @@ export interface CrudControllerOptions<M extends BaseEntity, C extends object, U
  *   GET    /                    all rows (unpaged; ?column=value filters)
  *   POST   /pagination          PrimeNG lazy table → { count, data }
  *   POST   /pagination/archive  same, soft-deleted rows
+ *   GET    /options             [{ id, label }] for relation selects (?search=&ids=&limit=&label=)
  *   GET    /archive/:id         one soft-deleted row
  *   GET    /:id                 one row
  *   POST   /                    create (validated against createDto)
@@ -63,6 +64,14 @@ export function BaseCrudController<M extends BaseEntity, C extends object, U ext
     @ApiOkResponse({ schema: paginatedSchema(entity) })
     findAllPaginationArchive(@Body() query: TableQueryDto) {
       return this.service.findAllPagination(query, false);
+    }
+
+    @AdminAccess('read')
+    @Get('options')
+    @ApiOperation({ summary: 'Id/label pairs for relation selects (?search=&ids=&limit=&label=)' })
+    @ApiOkResponse({ type: OptionDto, isArray: true })
+    options(@Query() query: OptionsQueryDto) {
+      return this.service.options(query);
     }
 
     @AdminAccess('read')

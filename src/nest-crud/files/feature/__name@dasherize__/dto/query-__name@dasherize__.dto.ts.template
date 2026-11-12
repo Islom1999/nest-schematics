@@ -1,8 +1,12 @@
-import { TableQueryDto } from '@app/common';
+<% if (queryDtoProps) { %>import { ApiPropertyOptional } from '@nestjs/swagger';
+import { <%= queryValidatorImports %> } from 'class-validator';
+<% } %>import { TableQueryDto } from '@app/common';
 
 /**
  * Body of `POST admin/<%= dasherize(name) %>/pagination[/archive]` (Angular `TableQueryDTO`).
  * Filterable/sortable fields: <%= allFieldNames.join(', ') %>.
  * Example filters: <%= filterExample %>
  */
-export class Query<%= classify(name) %>Dto extends TableQueryDto {}
+export class Query<%= classify(name) %>Dto extends TableQueryDto {<% if (queryDtoProps) { %>
+<%= queryDtoProps %>
+<% } %>}

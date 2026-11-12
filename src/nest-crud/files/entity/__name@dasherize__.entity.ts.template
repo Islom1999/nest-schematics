@@ -1,7 +1,8 @@
-import { ApiProperty<% if (hasOptionalProps) { %>, ApiPropertyOptional<% } %> } from '@nestjs/swagger';
-import { Column, Entity } from 'typeorm';
+import { <%= entitySwaggerImports %> } from '@nestjs/swagger';
+import { <%= typeormImports %> } from 'typeorm';
 import { BaseEntity } from '../base.entity';
-<% if (entityEnums) { %>
+<% if (entityImports) { %><%= entityImports %>
+<% } %><% if (entityEnums) { %>
 <%= entityEnums %>
 <% } %>
 @Entity({ name: '<%= underscore(name) %>' })

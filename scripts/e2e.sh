@@ -71,8 +71,9 @@ NODE
 git init -q && git add -A && git -c user.email=e2e@local -c user.name=e2e commit -qm starter
 
 log "CRUD resources"
-run_g crud category --fields "name:string,active:boolean"
-run_g crud product --fields "name:string,description:text?,price:number,status:enum(draft|published),publishedAt:date?"
+run_g crud category --fields "name:string:unique,slug:string(80):index,active:boolean:default(true)" --seed 5
+run_g crud tag --fields "name:string:unique"
+run_g crud product --fields "name:string:min(2):max(120),price:decimal(12,2):default(0),qty:int:default(0),meta:json?,status:enum(draft|published):default(draft),category:relation(Category),tags:relation(Tag[])?" --seed 10
 
 for step in "$ROOT"/scripts/e2e.d/*.sh; do
   [ -e "$step" ] || continue
@@ -88,8 +89,9 @@ fi
 git add -A && git -c user.email=e2e@local -c user.name=e2e commit -qm generated
 
 log "Re-run every generator: nothing may change"
-run_g crud category --fields "name:string,active:boolean"
-run_g crud product --fields "name:string,description:text?,price:number,status:enum(draft|published),publishedAt:date?"
+run_g crud category --fields "name:string:unique,slug:string(80):index,active:boolean:default(true)" --seed 5
+run_g crud tag --fields "name:string:unique"
+run_g crud product --fields "name:string:min(2):max(120),price:decimal(12,2):default(0),qty:int:default(0),meta:json?,status:enum(draft|published):default(draft),category:relation(Category),tags:relation(Tag[])?" --seed 10
 E2E_RERUN=1
 for step in "$ROOT"/scripts/e2e.d/*.sh; do
   [ -e "$step" ] || continue

@@ -23,7 +23,7 @@
     },
     "fields": {
       "type": "string",
-      "description": "Field spec, e.g. \"title:string,price:number,active:boolean,note:text?,status:enum(draft|published)\". Types: string|number|boolean|date|text|enum(a|b). Trailing ? = nullable. Default: name:string",
+      "description": "Field spec name:type[:modifier...][?], comma-separated. Types: string, string(N), text, int, number, decimal(p,s), boolean, date, json, enum(a|b), relation(Entity), relation(Entity[]), file(image|video|audio|pdf|other), file(kind)[]. Modifiers: unique, index, default(v), min(n), max(n), cascade, set-null, label(field). Trailing ? = nullable. Default: name:string",
       "alias": "f"
     },
     "module": {
@@ -39,6 +39,17 @@
       "type": "boolean",
       "description": "Do not register the module in the root module",
       "default": false
+    },
+    "migration": {
+      "type": "boolean",
+      "description": "Generate a CREATE TABLE migration in libs/database/src/migrations (--no-migration to skip)",
+      "default": true
+    },
+    "seed": {
+      "type": "integer",
+      "description": "Generate libs/database/src/seeds/<name>.seed.ts with N demo rows (development only)",
+      "minimum": 1,
+      "maximum": 1000
     },
     "sourceRoot": {
       "type": "string",

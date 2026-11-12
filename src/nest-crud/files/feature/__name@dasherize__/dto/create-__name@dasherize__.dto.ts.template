@@ -1,4 +1,4 @@
-import { ApiProperty<% if (hasOptionalDtoProps) { %>, ApiPropertyOptional<% } %> } from '@nestjs/swagger';
+import { <%= dtoSwaggerImports %> } from '@nestjs/swagger';
 <% if (needsTransformer) { %>import { Type } from 'class-transformer';
 <% } %><% if (validatorImports) { %>import { <%= validatorImports %> } from 'class-validator';
 <% } %><% if (enumImports.length) { %>import { <%= enumImports.join(', ') %> } from '@app/database';

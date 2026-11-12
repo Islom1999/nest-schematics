@@ -1,8 +1,21 @@
-import { NotFoundException } from '@nestjs/common';
-import { DeepPartial, FindOptionsWhere, Repository, SelectQueryBuilder } from 'typeorm';
-import { PaginatedResult, TableQueryDto } from '../dto/table-query.dto';
-import { runTableQuery, SECRET_FIELD, TableQueryOptions } from '../query/table-query';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { DeepPartial, EntityTarget, FindOptionsWhere, In, ObjectLiteral, Repository, SelectQueryBuilder } from 'typeorm';
+import { OptionDto, OptionsQueryDto, PaginatedResult, TableQueryDto } from '../dto/table-query.dto';
+import { escapeLike, runTableQuery, SECRET_FIELD, TableQueryOptions } from '../query/table-query';
 import { BaseEntity } from '@app/database';
+
+/** A DTO id field that points at rows of another entity (see `relationIds`). */
+export interface RelationIds {
+  /** Entity the ids reference. */
+  target: EntityTarget<ObjectLiteral>;
+  /**
+   * ManyToMany relation property the ids are resolved into (`tagIds` → `tags`).
+   * Omit for a ManyToOne id column (`categoryId`), which is only checked.
+   */
+  relation?: string;
+  /** Conditions every referenced row must meet, e.g. `{ kind: 'image' }`. */
+  where?: Record<string, unknown>;
+}
 
 /**
  * Generic admin CRUD over one entity: PrimeNG-compatible pagination and soft
@@ -10,7 +23,11 @@ import { BaseEntity } from '@app/database';
  * of rewriting endpoints:
  *
  * - `alias` / `relations` / `extendQuery()` shape the list + detail query
- *   (joined relations are filterable/sortable as `category.name`).
+ *   (joined relations are filterable/sortable as `category.name`);
+ *   `detailRelations` are joined into the detail only (ManyToMany lists).
+ * - `relationIds` — DTO id fields (`categoryId`, `tagIds`) checked against
+ *   their target and, for ManyToMany, resolved to entities on create/update.
+ * - `optionLabel` — label column of `GET options` (relation selects).
  * - `tableOptions` — global-search fields, custom filters, default sort.
  * - `toRow()` / `toDetail()` — map entities to the API response.
  * - `beforeCreate()` / `beforeUpdate()` / `beforeDelete()` / `beforeRestore()`
@@ -25,6 +42,12 @@ export abstract class BaseCrudService<
   protected alias = 'entity';
   /** Relations joined (`leftJoinAndSelect`) into list/detail, aliased by name. */
   protected relations: string[] = [];
+  /** Relations joined into the detail (`GET /:id`) only, e.g. ManyToMany lists. */
+  protected detailRelations: string[] = [];
+  /** DTO id fields → referenced entity: `{ categoryId: { target: Category }, tagIds: { target: Tag, relation: 'tags' } }`. */
+  protected relationIds: Record<string, RelationIds> = {};
+  /** Column shown as `label` by `GET options`; falls back to `id` when the entity has no such column. */
+  protected optionLabel = 'name';
   protected tableOptions: TableQueryOptions = {
     defaultSort: { field: 'createdAt', order: 'DESC' },
   };
@@ -61,9 +84,9 @@ export abstract class BaseCrudService<
 
   // ── Queries ────────────────────────────────────────────────────────────
 
-  protected createQuery(archived = false): SelectQueryBuilder<M> {
+  protected createQuery(archived = false, detail = false): SelectQueryBuilder<M> {
     const qb = this.repository.createQueryBuilder(this.alias);
-    for (const relation of this.relations) {
+    for (const relation of detail ? [...this.relations, ...this.detailRelations] : this.relations) {
       qb.leftJoinAndSelect(`${this.alias}.${relation}`, relation);
     }
     this.extendQuery?.(qb);
@@ -100,14 +123,39 @@ export abstract class BaseCrudService<
 
   /** `GET /:id` (active) and `GET /archive/:id` (soft-deleted). */
   async findOne(id: string, isActive = true): Promise<unknown> {
-    return this.toDetail(await this.getEntity(id, isActive));
+    return this.toDetail(this.withRelationIds(await this.getEntity(id, isActive)));
   }
 
-  /** Entity with the list joins; 404 when missing. */
+  /** Entity with the list and detail joins; 404 when missing. */
   protected async getEntity(id: string, isActive = true): Promise<M> {
-    const entity = await this.createQuery(!isActive).andWhere(`${this.alias}.id = :id`, { id }).getOne();
+    const entity = await this.createQuery(!isActive, true).andWhere(`${this.alias}.id = :id`, { id }).getOne();
     if (!entity) throw new NotFoundException(this.notFoundMessage);
     return entity;
+  }
+
+  /** `GET /options` — `{ id, label }[]` for relation selects, sorted by label. */
+  async options(query: OptionsQueryDto = {}): Promise<OptionDto[]> {
+    const meta = this.repository.metadata;
+    const requested = query.label ?? this.optionLabel;
+    let column = meta.findColumnWithPropertyName(requested);
+    if (!column && !query.label) column = meta.findColumnWithPropertyName('id');
+    if (!column || column.relationMetadata || SECRET_FIELD.test(column.propertyName)) {
+      throw new BadRequestException(`Unknown label field "${requested}"`);
+    }
+    const qb = this.repository.createQueryBuilder(this.alias);
+    const label = `CAST(${qb.escape(this.alias)}.${qb.escape(column.databaseName)} AS TEXT)`;
+    qb.select(`${qb.escape(this.alias)}.${qb.escape('id')}`, 'id').addSelect(label, 'label');
+    const ids = query.ids ?? [];
+    if (ids.length) qb.andWhere(`${this.alias}.id IN (:...ids)`, { ids });
+    const search = query.search?.trim();
+    if (search) {
+      qb.andWhere(`${label} ILIKE :search`, { search: `%${escapeLike(search)}%` });
+    }
+    return qb
+      .orderBy(label, 'ASC')
+      .addOrderBy(`${this.alias}.id`, 'ASC')
+      .limit(Math.max(query.limit ?? 20, ids.length))
+      .getRawMany<OptionDto>();
   }
 
   /** Bare entity (no joins); 404 when missing. */
@@ -120,16 +168,54 @@ export abstract class BaseCrudService<
   // ── Mutations ──────────────────────────────────────────────────────────
 
   async create(dto: C): Promise<unknown> {
-    const data = await this.beforeCreate(dto);
+    const data = await this.resolveRelationIds(await this.beforeCreate(dto));
     const saved = await this.repository.save(this.repository.create(data));
     return this.findOne(saved.id);
   }
 
   async update(id: string, dto: U): Promise<unknown> {
     const entity = await this.getRaw(id);
-    const patch = await this.beforeUpdate(entity, dto);
+    const patch = await this.resolveRelationIds(await this.beforeUpdate(entity, dto));
     await this.repository.save(Object.assign(entity, patch));
     return this.findOne(id);
+  }
+
+  /**
+   * Checks every `relationIds` field present in `data` (400 for unknown ids)
+   * and turns ManyToMany id lists into entities (`tagIds` → `tags`; null or
+   * `[]` clears the list).
+   */
+  protected async resolveRelationIds(data: DeepPartial<M>): Promise<DeepPartial<M>> {
+    const out = { ...data } as Record<string, unknown>;
+    for (const [key, ref] of Object.entries(this.relationIds)) {
+      // DTO classes define absent properties as undefined: "not sent", leave as is.
+      const value = out[key];
+      if (value === undefined) continue;
+      const ids = [...new Set((Array.isArray(value) ? value : [value]).filter((v): v is string => typeof v === 'string'))];
+      const rows = ids.length
+        ? await this.repository.manager
+            .getRepository(ref.target)
+            .find({ where: { ...ref.where, id: In(ids) } as FindOptionsWhere<ObjectLiteral> })
+        : [];
+      if (rows.length !== ids.length) {
+        const found = new Set(rows.map((r) => r.id as string));
+        throw new BadRequestException(`${key}: not found: ${ids.filter((i) => !found.has(i)).join(', ')}`);
+      }
+      if (ref.relation) {
+        delete out[key];
+        out[ref.relation] = rows;
+      }
+    }
+    return out as DeepPartial<M>;
+  }
+
+  /** Adds the id lists of loaded ManyToMany relations (`tags` → `tagIds`), for edit forms. */
+  protected withRelationIds(entity: M): M {
+    for (const [key, ref] of Object.entries(this.relationIds)) {
+      const rows = ref.relation ? (entity as Record<string, unknown>)[ref.relation] : undefined;
+      if (Array.isArray(rows)) Object.assign(entity, { [key]: rows.map((r: { id: string }) => r.id) });
+    }
+    return entity;
   }
 
   /** Soft delete: the row moves to the archive and can be restored. */

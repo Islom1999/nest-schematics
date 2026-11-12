@@ -20,6 +20,11 @@ export interface TableQueryOptions {
   defaultSort?: { field: string; order: 'ASC' | 'DESC' };
   /** Client field → query field, e.g. `{ categoryName: 'category.name' }`. */
   fieldMap?: Record<string, string>;
+  /**
+   * Top-level properties of the query DTO that filter like `filters[key]`:
+   * a value is `equals`, an array is `in` (e.g. `categoryId` of a relation).
+   */
+  queryFilters?: string[];
 }
 
 type Kind = 'string' | 'number' | 'date' | 'boolean' | 'enum' | 'array';
@@ -85,7 +90,7 @@ function resolveField<T extends ObjectLiteral>(qb: SelectQueryBuilder<T>, field:
   return { sql: `${alias.name}.${column.propertyPath}`, column, kind: kindOf(column) };
 }
 
-function escapeLike(value: string): string {
+export function escapeLike(value: string): string {
   return value.replace(/[\\%_]/g, (c) => `\\${c}`);
 }
 
@@ -235,7 +240,14 @@ export async function runTableQuery<M extends ObjectLiteral>(
   const first = Math.max(Number(query.first) || 0, 0);
   let n = 0;
 
-  for (const [field, raw] of Object.entries(query.filters ?? {})) {
+  // `filters` plus top-level shortcuts (`categoryId`), AND-ed with each other.
+  const filters: Array<[string, TableFilterRule | TableFilterRule[]]> = Object.entries(query.filters ?? {});
+  for (const key of options.queryFilters ?? []) {
+    const value = (query as unknown as Record<string, unknown>)[key];
+    if (!isEmpty(value)) filters.push([key, { value, matchMode: Array.isArray(value) ? 'in' : 'equals' }]);
+  }
+
+  for (const [field, raw] of filters) {
     const rules = (Array.isArray(raw) ? raw : [raw]).filter(
       (r): r is TableFilterRule => !!r && typeof r === 'object' && !isEmpty(r.value),
     );

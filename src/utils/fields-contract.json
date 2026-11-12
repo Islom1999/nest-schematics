@@ -1,0 +1,564 @@
+{
+  "$comment": "Shared --fields contract (nest-schematics and fuse-schematics). valid: parseFields(spec) deep-equals fields, stringifyFields(fields) === normalized, fields.map(fieldKey) equals keys. invalid: parseFields(spec) throws FieldSpecError with this message. Edit in nest-schematics, then: node scripts/sync-fields.mjs <fuse-schematics>/src/utils",
+  "valid": [
+    {
+      "spec": "title:string,price:number,active:boolean,note:text?,publishedAt:date?",
+      "fields": [
+        {
+          "name": "title",
+          "type": "string",
+          "nullable": false
+        },
+        {
+          "name": "price",
+          "type": "number",
+          "nullable": false
+        },
+        {
+          "name": "active",
+          "type": "boolean",
+          "nullable": false
+        },
+        {
+          "name": "note",
+          "type": "text",
+          "nullable": true
+        },
+        {
+          "name": "publishedAt",
+          "type": "date",
+          "nullable": true
+        }
+      ],
+      "normalized": "title:string,price:number,active:boolean,note:text?,publishedAt:date?",
+      "keys": [
+        "title",
+        "price",
+        "active",
+        "note",
+        "publishedAt"
+      ]
+    },
+    {
+      "spec": " title : String , slug, code? ",
+      "fields": [
+        {
+          "name": "title",
+          "type": "string",
+          "nullable": false
+        },
+        {
+          "name": "slug",
+          "type": "string",
+          "nullable": false
+        },
+        {
+          "name": "code",
+          "type": "string",
+          "nullable": true
+        }
+      ],
+      "normalized": "title:string,slug:string,code:string?",
+      "keys": [
+        "title",
+        "slug",
+        "code"
+      ]
+    },
+    {
+      "spec": "status:enum(draft|published),kind:enum(a,b)?",
+      "fields": [
+        {
+          "name": "status",
+          "type": "enum",
+          "nullable": false,
+          "enumValues": [
+            "draft",
+            "published"
+          ]
+        },
+        {
+          "name": "kind",
+          "type": "enum",
+          "nullable": true,
+          "enumValues": [
+            "a",
+            "b"
+          ]
+        }
+      ],
+      "normalized": "status:enum(draft|published),kind:enum(a|b)?",
+      "keys": [
+        "status",
+        "kind"
+      ]
+    },
+    {
+      "spec": "code:string(32):unique,title:string:min(3):max(120)",
+      "fields": [
+        {
+          "name": "code",
+          "type": "string",
+          "nullable": false,
+          "length": 32,
+          "unique": true
+        },
+        {
+          "name": "title",
+          "type": "string",
+          "nullable": false,
+          "min": 3,
+          "max": 120
+        }
+      ],
+      "normalized": "code:string(32):unique,title:string:min(3):max(120)",
+      "keys": [
+        "code",
+        "title"
+      ]
+    },
+    {
+      "spec": "slug:string(80):index,active:boolean:default(true)",
+      "fields": [
+        {
+          "name": "slug",
+          "type": "string",
+          "nullable": false,
+          "length": 80,
+          "index": true
+        },
+        {
+          "name": "active",
+          "type": "boolean",
+          "nullable": false,
+          "default": true
+        }
+      ],
+      "normalized": "slug:string(80):index,active:boolean:default(true)",
+      "keys": [
+        "slug",
+        "active"
+      ]
+    },
+    {
+      "spec": "qty:int:default(0),rating:number:min(0):max(5)",
+      "fields": [
+        {
+          "name": "qty",
+          "type": "int",
+          "nullable": false,
+          "default": 0
+        },
+        {
+          "name": "rating",
+          "type": "number",
+          "nullable": false,
+          "min": 0,
+          "max": 5
+        }
+      ],
+      "normalized": "qty:int:default(0),rating:number:min(0):max(5)",
+      "keys": [
+        "qty",
+        "rating"
+      ]
+    },
+    {
+      "spec": "price:decimal(12,2):default(0),tax:decimal,ratio:decimal(5):min(0)",
+      "fields": [
+        {
+          "name": "price",
+          "type": "decimal",
+          "nullable": false,
+          "precision": 12,
+          "scale": 2,
+          "default": 0
+        },
+        {
+          "name": "tax",
+          "type": "decimal",
+          "nullable": false,
+          "precision": 12,
+          "scale": 2
+        },
+        {
+          "name": "ratio",
+          "type": "decimal",
+          "nullable": false,
+          "precision": 5,
+          "scale": 0,
+          "min": 0
+        }
+      ],
+      "normalized": "price:decimal(12,2):default(0),tax:decimal(12,2),ratio:decimal(5,0):min(0)",
+      "keys": [
+        "price",
+        "tax",
+        "ratio"
+      ]
+    },
+    {
+      "spec": "meta:json?,settings:json:default({\"theme\":\"dark\"})",
+      "fields": [
+        {
+          "name": "meta",
+          "type": "json",
+          "nullable": true
+        },
+        {
+          "name": "settings",
+          "type": "json",
+          "nullable": false,
+          "default": {
+            "theme": "dark"
+          }
+        }
+      ],
+      "normalized": "meta:json?,settings:json:default({\"theme\":\"dark\"})",
+      "keys": [
+        "meta",
+        "settings"
+      ]
+    },
+    {
+      "spec": "status:enum(draft|published):default(draft),publishedAt:date:default(now)",
+      "fields": [
+        {
+          "name": "status",
+          "type": "enum",
+          "nullable": false,
+          "enumValues": [
+            "draft",
+            "published"
+          ],
+          "default": "draft"
+        },
+        {
+          "name": "publishedAt",
+          "type": "date",
+          "nullable": false,
+          "default": "now"
+        }
+      ],
+      "normalized": "status:enum(draft|published):default(draft),publishedAt:date:default(now)",
+      "keys": [
+        "status",
+        "publishedAt"
+      ]
+    },
+    {
+      "spec": "category:relation(Category),tags:relation(Tag[])?",
+      "fields": [
+        {
+          "name": "category",
+          "type": "relation",
+          "nullable": false,
+          "target": "Category",
+          "many": false
+        },
+        {
+          "name": "tags",
+          "type": "relation",
+          "nullable": true,
+          "target": "Tag",
+          "many": true
+        }
+      ],
+      "normalized": "category:relation(Category),tags:relation(Tag[])?",
+      "keys": [
+        "categoryId",
+        "tagIds"
+      ]
+    },
+    {
+      "spec": "parent:relation(sp-year):set-null:label(title)?",
+      "fields": [
+        {
+          "name": "parent",
+          "type": "relation",
+          "nullable": true,
+          "target": "SpYear",
+          "many": false,
+          "onDelete": "set-null",
+          "label": "title"
+        }
+      ],
+      "normalized": "parent:relation(SpYear):set-null:label(title)?",
+      "keys": [
+        "parentId"
+      ]
+    },
+    {
+      "spec": "owner:relation(User):cascade:unique,reviewers:relation(User)[]:min(1):max(5)",
+      "fields": [
+        {
+          "name": "owner",
+          "type": "relation",
+          "nullable": false,
+          "target": "User",
+          "many": false,
+          "unique": true,
+          "onDelete": "cascade"
+        },
+        {
+          "name": "reviewers",
+          "type": "relation",
+          "nullable": false,
+          "target": "User",
+          "many": true,
+          "min": 1,
+          "max": 5
+        }
+      ],
+      "normalized": "owner:relation(User):unique:cascade,reviewers:relation(User[]):min(1):max(5)",
+      "keys": [
+        "ownerId",
+        "reviewerIds"
+      ]
+    },
+    {
+      "spec": "image:file(image),docs:file(pdf)[]?,video:file(VIDEO):set-null?",
+      "fields": [
+        {
+          "name": "image",
+          "type": "file",
+          "nullable": false,
+          "kind": "image",
+          "many": false
+        },
+        {
+          "name": "docs",
+          "type": "file",
+          "nullable": true,
+          "kind": "pdf",
+          "many": true
+        },
+        {
+          "name": "video",
+          "type": "file",
+          "nullable": true,
+          "kind": "video",
+          "many": false,
+          "onDelete": "set-null"
+        }
+      ],
+      "normalized": "image:file(image),docs:file(pdf)[]?,video:file(video):set-null?",
+      "keys": [
+        "imageId",
+        "docIds",
+        "videoId"
+      ]
+    },
+    {
+      "spec": "rating:number?:min(0),code?",
+      "fields": [
+        {
+          "name": "rating",
+          "type": "number",
+          "nullable": true,
+          "min": 0
+        },
+        {
+          "name": "code",
+          "type": "string",
+          "nullable": true
+        }
+      ],
+      "normalized": "rating:number:min(0)?,code:string?",
+      "keys": [
+        "rating",
+        "code"
+      ]
+    },
+    {
+      "spec": "note:text:default(Hello, world):max(200)?",
+      "fields": [
+        {
+          "name": "note",
+          "type": "text",
+          "nullable": true,
+          "default": "Hello, world",
+          "max": 200
+        }
+      ],
+      "normalized": "note:text:default(Hello, world):max(200)?",
+      "keys": [
+        "note"
+      ]
+    }
+  ],
+  "invalid": [
+    {
+      "spec": "price:money",
+      "error": "Unknown type \"money\" for \"price\". Allowed: string, text, int, number, decimal, boolean, date, json, enum, relation, file."
+    },
+    {
+      "spec": "1abc:string",
+      "error": "Invalid field name \"1abc\". Use letters, digits and _ only."
+    },
+    {
+      "spec": "my-field:string",
+      "error": "Invalid field name \"my-field\". Use letters, digits and _ only."
+    },
+    {
+      "spec": "title:string,title:text",
+      "error": "Field \"title\" is listed twice."
+    },
+    {
+      "spec": "id:string",
+      "error": "Field \"id\" is reserved (already in BaseEntity)."
+    },
+    {
+      "spec": "createdAt:date",
+      "error": "Field \"createdAt\" is reserved (already in BaseEntity)."
+    },
+    {
+      "spec": "status:enum",
+      "error": "Enum \"status\" needs values, e.g. \"status:enum(draft|published)\"."
+    },
+    {
+      "spec": "status:enum()",
+      "error": "Enum \"status\" needs values, e.g. \"status:enum(draft|published)\"."
+    },
+    {
+      "spec": "status:enum(a b)",
+      "error": "Invalid enum value \"a b\" for \"status\"."
+    },
+    {
+      "spec": "price:number(5)",
+      "error": "Type \"number\" takes no arguments: \"price:number(5)\"."
+    },
+    {
+      "spec": ":string",
+      "error": "Invalid field \":string\". Expected name:type, e.g. \"price:number\"."
+    },
+    {
+      "spec": "name::unique",
+      "error": "Invalid field \"name::unique\". Expected name:type, e.g. \"price:number\"."
+    },
+    {
+      "spec": "name:string:unique:index",
+      "error": "\"name\": use either unique or index (a unique index is already an index)."
+    },
+    {
+      "spec": "name:string:primary",
+      "error": "Unknown modifier \"primary\" in \"name:string:primary\". Allowed: unique, index, default, min, max, cascade, set-null, label."
+    },
+    {
+      "spec": "name:string:unique:unique",
+      "error": "Modifier \"unique\" is listed twice in \"name:string:unique:unique\"."
+    },
+    {
+      "spec": "name:string:min(5):max(2)",
+      "error": "\"name\": min (5) is greater than max (2)."
+    },
+    {
+      "spec": "code:string(10):max(20)",
+      "error": "\"code\": max (20) is greater than the column length (10)."
+    },
+    {
+      "spec": "qty:int:default(1.5)",
+      "error": "Default of \"qty\" must be an integer."
+    },
+    {
+      "spec": "active:boolean:default(yes)",
+      "error": "Default of \"active\" must be true or false."
+    },
+    {
+      "spec": "status:enum(a|b):default(c)",
+      "error": "Default of \"status\" must be one of a, b."
+    },
+    {
+      "spec": "at:date:default(2024-01-01)",
+      "error": "Default of date \"at\" can only be now."
+    },
+    {
+      "spec": "meta:json:unique",
+      "error": "\"unique\" is not supported on json field \"meta\"."
+    },
+    {
+      "spec": "meta:json:default(1)",
+      "error": "Default of \"meta\" must be a JSON object or array, e.g. default({})."
+    },
+    {
+      "spec": "price:decimal(5,2):default(1.234)",
+      "error": "Default of \"price\" has more than 2 decimal places."
+    },
+    {
+      "spec": "price:decimal(2,5)",
+      "error": "Decimal \"price\" needs 1 <= precision <= 1000 and scale <= precision."
+    },
+    {
+      "spec": "qty:int:min(1):default(0)",
+      "error": "Default of \"qty\" is below min (1)."
+    },
+    {
+      "spec": "name:string:default(it's)",
+      "error": "Default of \"name\" cannot contain quotes, backticks, backslashes or ${."
+    },
+    {
+      "spec": "flag:boolean:min(1)",
+      "error": "\"min\" applies to string, text, int, number, decimal and list fields, not \"flag\"."
+    },
+    {
+      "spec": "name:string:cascade",
+      "error": "\"cascade\" applies to single relation/file fields only, not \"name\"."
+    },
+    {
+      "spec": "tags:relation(Tag[]):cascade",
+      "error": "\"cascade\" applies to single relation/file fields only, not \"tags\"."
+    },
+    {
+      "spec": "category:relation(Category):set-null",
+      "error": "\"category\": set-null needs a nullable field (add ? at the end)."
+    },
+    {
+      "spec": "category:relation()",
+      "error": "Relation \"category\" needs a target entity, e.g. \"category:relation(Category)\"."
+    },
+    {
+      "spec": "category:relation(1Cat)",
+      "error": "Invalid relation target \"1Cat\" for \"category\"."
+    },
+    {
+      "spec": "categoryId:relation(Category)",
+      "error": "Name the relation \"categoryId\" without the Id suffix (e.g. \"category\"); the generator adds \"categoryId\"."
+    },
+    {
+      "spec": "name:string:label(x)",
+      "error": "\"label\" applies to relation fields only, not \"name\"."
+    },
+    {
+      "spec": "image:file",
+      "error": "File \"image\" needs a kind: file(image|video|audio|pdf|other), e.g. \"image:file(image)\"."
+    },
+    {
+      "spec": "image:file(gif)",
+      "error": "File \"image\" needs a kind: file(image|video|audio|pdf|other), e.g. \"image:file(image)\"."
+    },
+    {
+      "spec": "tags:string[]",
+      "error": "Only relation and file fields can be lists ([]): \"tags:string[]\"."
+    },
+    {
+      "spec": "tags:relation(Tag[]):unique",
+      "error": "\"unique\" is not supported on list field \"tags\"."
+    },
+    {
+      "spec": "category:relation(Category),categoryId:string",
+      "error": "Field \"categoryId\" is listed twice."
+    },
+    {
+      "spec": "name:string:default",
+      "error": "Modifier \"default\" needs a value, e.g. default(…): \"name:string:default\"."
+    },
+    {
+      "spec": "name:string:unique(1)",
+      "error": "Modifier \"unique\" takes no value: \"name:string:unique(1)\"."
+    },
+    {
+      "spec": "name:string(0)",
+      "error": "Length of \"name\" must be an integer >= 1, got \"0\"."
+    }
+  ]
+}

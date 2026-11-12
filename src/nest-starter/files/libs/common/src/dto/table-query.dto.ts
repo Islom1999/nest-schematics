@@ -1,6 +1,18 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
-import { IsInt, IsObject, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
+import {
+  ArrayMaxSize,
+  IsArray,
+  IsInt,
+  IsObject,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Matches,
+  Max,
+  MaxLength,
+  Min,
+} from 'class-validator';
 
 export const MATCH_MODES = [
   'startsWith',
@@ -100,6 +112,54 @@ export class TableQueryDto {
 export interface PaginatedResult<T> {
   count: number;
   data: T[];
+}
+
+/**
+ * Query of `GET admin/<resource>/options` — id/label pairs for relation
+ * selects (fuse-schematics p-select / p-multiselect, see `x-relation`).
+ */
+export class OptionsQueryDto {
+  @ApiPropertyOptional({ type: String, description: 'Case-insensitive search in the label' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  search?: string;
+
+  @ApiPropertyOptional({
+    type: String,
+    format: 'uuid',
+    isArray: true,
+    description: 'Only these ids (comma-separated or repeated), e.g. to show the selected values of a form',
+  })
+  @IsOptional()
+  @Transform(({ value }) => (typeof value === 'string' ? value.split(',').map((v) => v.trim()).filter(Boolean) : value))
+  @IsArray()
+  @ArrayMaxSize(100)
+  @IsUUID(undefined, { each: true })
+  ids?: string[];
+
+  @ApiPropertyOptional({ type: Number, default: 20, minimum: 1, maximum: 100 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit?: number;
+
+  @ApiPropertyOptional({ type: String, description: 'Label column; default: the resource label field (name, title or id)' })
+  @IsOptional()
+  @IsString()
+  @Matches(/^[A-Za-z_][A-Za-z0-9_]*$/)
+  label?: string;
+}
+
+/** One `GET options` row. */
+export class OptionDto {
+  @ApiProperty({ format: 'uuid' })
+  id: string;
+
+  @ApiProperty({ type: String })
+  label: string;
 }
 
 export class DeleteResultDto {

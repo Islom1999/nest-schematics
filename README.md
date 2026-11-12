@@ -9,7 +9,7 @@ These schematics generate a NestJS 11 + TypeORM (PostgreSQL) **monorepo** backen
 - **Monorepo starter**: `apps/api`, `apps/bot` (telegraf), `apps/worker` (cron), `libs/database`, `libs/common`, webpack build
 - **CRUD generator**: entity, DTOs (create/update/query), service, controller and module, all wired up automatically
 - **PrimeNG table contract**: `POST pagination` → `{ count, data }`, safe filter/sort/search, archive (soft delete) and restore
-- **`--fields`**: `name:string,price:number,active:boolean,status:enum(a|b)`, the same syntax as the frontend
+- **`--fields`**: `name:string:unique,price:decimal(12,2):default(0),category:relation(Category),tags:relation(Tag[])?`, the same syntax as the frontend (relations, files, indexes, defaults), plus a migration, permissions and an optional seed
 - **Auth skeleton**: JWT `sign-in`, `@AdminResource` with read/write permissions, a fail-closed guard
 - **Swagger, helmet, CORS, env validation, and a single error format** (PG errors → 400/409)
 
@@ -86,7 +86,7 @@ shop-api/
 Run it inside the monorepo the starter created:
 
 ```bash
-npx schematics fuse-nest-schematics:crud <nom> [--fields "..."] [--app api] [--path ...] [--skip-import]
+npx schematics fuse-nest-schematics:crud <nom> [--fields "..."] [--seed N] [--no-migration] [--app api] [--path ...] [--skip-import]
 ```
 
 With the Nest CLI (no `--fields`; in a monorepo `-p <app>` is required):
@@ -106,6 +106,9 @@ nest g -c fuse-nest-schematics crud <nom> -p api
 | `--module` | `apps/<app>/src/<app>.module.ts` | Root module to register in |
 | `--db-lib` | `libs/database/src` | The entity goes into `<dbLib>/entities` |
 | `--skip-import` | `false` | Do not register the module |
+| `--no-migration` | (migration on) | Do not write `libs/database/src/migrations/<timestamp>-create-<nom>.ts` |
+| `--seed N` | — | Write `libs/database/src/seeds/<nom>.seed.ts` with N demo rows (development only, 1..1000) |
+| `--force` | `false` | Overwrite generated files you have edited |
 
 Natija (`crud mahsulot`):
 
@@ -113,6 +116,11 @@ Natija (`crud mahsulot`):
 libs/database/src/entities/
 ├── mahsulot.entity.ts          # @Entity({ name: 'mahsulot' }) extends BaseEntity
 └── index.ts                    # + export * from './mahsulot.entity';
+libs/database/src/migrations/
+├── <timestamp>-create-mahsulot.ts  # CREATE TABLE + indexes, FKs, join tables, enum types
+└── index.ts                    # + CreateMahsulot<timestamp>
+libs/database/src/seeds/mahsulot.seed.ts   # only with --seed N (+ seeds/index.ts)
+libs/common/src/permissions.ts  # + { resource: 'mahsulot', actions: ['read', 'write'] }
 apps/api/src/modules/mahsulot/
 ├── dto/
 │   ├── create-mahsulot.dto.ts  # class-validator + Swagger
@@ -124,26 +132,57 @@ apps/api/src/modules/mahsulot/
 apps/api/src/api.module.ts      # + MahsulotModule (AST, no duplicates)
 ```
 
-Re-running does not duplicate the module registration or the barrel export, but it overwrites the generated files.
+Re-running with the same options changes nothing: registrations are not duplicated and no second migration is written. Files you have edited are kept unless you pass `--force`. Changing the fields of an existing resource does not generate a migration; edit the entity (or re-run with `--force`) and then run `npm run migration:generate`.
 
 #### `--fields` sintaksisi
 
 ```
-"name:string,price:number,active:boolean,note:text?,birth:date,status:enum(draft|published)"
+name:type[:modifier...][?]   # comma-separated; commas inside (...) do not split
 ```
 
-| type | DB | Validation |
-|---|---|---|
-| `string` | `varchar(255)` | `IsString`, `MaxLength(255)`, `IsNotEmpty` |
-| `text` | `text` | `IsString` |
-| `number` | `double precision` | `IsNumber` |
-| `boolean` | `boolean default false` | optional, `IsBoolean` |
-| `date` | `timestamptz` | `IsDate` |
-| `enum(a\|b)` | PG enum | `IsEnum` |
+```bash
+npm run g -- crud category --fields "name:string:unique,slug:string(80):index,active:boolean:default(true)" --seed 5
+npm run g -- crud tag --fields "name:string:unique"
+npm run g -- crud product --fields "name:string:min(2):max(120),price:decimal(12,2):default(0),qty:int:default(0),meta:json?,status:enum(draft|published):default(draft),category:relation(Category),tags:relation(Tag[])?" --seed 10
+```
 
-- A trailing `?` makes the field nullable and optional.
-- A missing type means `string`.
+| type | DB | DTO validation | Swagger |
+|---|---|---|---|
+| `string`, `string(N)` | `varchar(N)` (255, or `max(n)`) | `IsString`, `MaxLength`, `MinLength`, `IsNotEmpty` | `type: String` |
+| `text` | `text` | `IsString` | `format: 'textarea'` |
+| `int` | `integer` | `IsInt`, `Min`/`Max` (int32) | `type: 'integer'` |
+| `number` | `double precision` | `IsNumber` | `type: Number` |
+| `decimal(p,s)` | `numeric(p,s)` (default 12,2), returned as a number | `IsNumber({ maxDecimalPlaces: s })`, ±limit | `type: Number, format: 'decimal'` |
+| `boolean` | `boolean default false` | optional, `IsBoolean` | |
+| `date` | `timestamptz` | `IsDate` | `format: 'date-time'` |
+| `json` | `jsonb` | `IsObject` | `type: 'object'` |
+| `enum(a\|b)` | PG enum `<table>_<field>_enum` | `IsEnum` | `enum: X, enumName: 'X'` |
+| `relation(Category)` | `category_id uuid` + FK + index (ManyToOne) | `categoryId`: `IsUUID` | `x-relation` |
+| `relation(Tag[])` | join table `<table>_tags` (ManyToMany) | `tagIds`: `IsUUID` each, `ArrayUnique` | `x-relation` |
+| `file(image)`, `file(pdf)[]` | FK / join table to `media_files` (needs `npm run g -- upload`) | `imageId` / `docIds` | `x-file` |
+
+File kinds: `image`, `video`, `audio`, `pdf`, `other`.
+
+| modifier | Effect |
+|---|---|
+| `unique` | Unique index; on soft-deleted tables it is partial: `WHERE deleted_at IS NULL` |
+| `index` | Plain index |
+| `default(v)` | Column default, checked against the type (`default(now)` for dates) |
+| `min(n)`, `max(n)` | Length for strings, value for numbers, item count for lists |
+| `cascade`, `set-null` | `ON DELETE` of a single relation/file (default: `SET NULL` when nullable, otherwise `RESTRICT`) |
+| `label(field)` | Field shown for a relation in selects (default: `name`, `title`, else `id`) |
+
+- A trailing `?` makes the field nullable and optional; a missing type means `string`.
 - `id`, `createdAt`, `updatedAt` and `deletedAt` are reserved (they come from `BaseEntity`).
+- A relation target must exist first (`libs/database/src/entities/<target>.entity.ts`); otherwise the generator says which `crud` command to run.
+- Relations load in the detail (`GET :id` returns `category` and `tagIds`); `categoryId` can also be sent as a top-level filter in the pagination body.
+
+OpenAPI extensions for the frontend (on the entity, the create DTO and the query DTO):
+
+```ts
+'x-relation': { entity: 'Category', endpoint: '/admin/category/options', label: 'name', multiple: false }
+'x-file': { kind: 'image', multiple: false }
+```
 
 ## API kontrakti
 
@@ -154,6 +193,7 @@ Every CRUD resource exposes these endpoints, which match the frontend `BaseCrudS
 | GET | `/api/admin/<nom>` | `T[]` |
 | POST | `/api/admin/<nom>/pagination` | `{ count, data }` |
 | POST | `/api/admin/<nom>/pagination/archive` | `{ count, data }` |
+| GET | `/api/admin/<nom>/options?search=&ids=&limit=` | `{ id, label }[]` (selects, `read` permission) |
 | GET | `/api/admin/<nom>/:id` | `T` |
 | GET | `/api/admin/<nom>/archive/:id` | `T` |
 | POST | `/api/admin/<nom>` | `T` |
@@ -198,9 +238,10 @@ schematics ./src/collection.json:starter demo-api --skip-install --dry-run=false
 npm i -g @angular-devkit/schematics-cli fuse-nest-schematics
 schematics fuse-nest-schematics:starter shop-api            # --apps api,bot,worker --skip-install
 cd shop-api
-npx schematics fuse-nest-schematics:crud product --fields "name:string,price:number,active:boolean,status:enum(draft|published)"
+npx schematics fuse-nest-schematics:crud category --fields "name:string:unique" --seed 5
+npx schematics fuse-nest-schematics:crud product --fields "name:string:min(2),price:decimal(12,2):default(0),status:enum(draft|published),category:relation(Category),tags:relation(Tag[])?"
 # or, without --fields (the Nest CLI rejects unknown flags):
 nest g -c fuse-nest-schematics crud product -p api
 ```
 
-The field types are `string`, `text`, `number`, `boolean`, `date` and `enum(a|b)`; a trailing `?` makes a field nullable. The generated module is registered in `apps/<app>/src/<app>.module.ts` via the TypeScript AST and is never added twice. Requires Node.js >= 20.19. MIT licensed.
+`--fields` takes `name:type[:modifier...][?]`. Types: `string`, `string(N)`, `text`, `int`, `number`, `decimal(p,s)`, `boolean`, `date`, `json`, `enum(a|b)`, `relation(Entity)` (ManyToOne), `relation(Entity[])` (ManyToMany) and `file(kind)`/`file(kind)[]` (needs the upload add-on). Modifiers: `unique` (partial unique index on soft-deleted tables), `index`, `default(v)`, `min(n)`, `max(n)`, `cascade`, `set-null` and `label(field)`; a trailing `?` makes a field nullable. Each new resource gets a TypeORM migration (`--no-migration` to skip), `read`/`write` permissions, a `GET admin/<name>/options` route for selects and, with `--seed N`, a development seed. Relations and files carry `x-relation` / `x-file` OpenAPI extensions for the frontend. The generated module is registered in `apps/<app>/src/<app>.module.ts` via the TypeScript AST and is never added twice. Requires Node.js >= 20.19. MIT licensed.
