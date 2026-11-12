@@ -4,8 +4,9 @@ import { Repository } from 'typeorm';
 import { Notification, NotificationCampaign, NotificationPushStatus, User } from '@app/database';
 import { FCM_MULTICAST_LIMIT, FcmSender } from './fcm.sender';
 import { parseServiceAccount } from './firebase-credentials';
+import { NotificationChannel } from './notification-channel';
 import { NotificationService } from './notification.service';
-import { PushTarget } from './notification.types';
+import { NotificationJobQueue, PushTarget } from './notification.types';
 import { PushTokenStore } from './push-token-store';
 
 const mockSendEach = jest.fn();
@@ -119,7 +120,7 @@ describe('NotificationService', () => {
   const activePushTokens = jest.fn(async (_userIds: string[]): Promise<PushTarget[]> => []);
   const clearPushToken = jest.fn(async (_sessionId: string) => undefined);
 
-  function service(values: Record<string, string> = {}): NotificationService {
+  function service(values: Record<string, string> = {}, jobs: NotificationJobQueue | null = null, channels: NotificationChannel[] = []): NotificationService {
     const qb = {
       select: () => qb,
       orderBy: () => qb,
@@ -133,8 +134,9 @@ describe('NotificationService', () => {
       { createQueryBuilder: () => qb } as unknown as Repository<User>,
       store,
       new FcmSender(config(values)),
-      [],
+      channels,
       config(values),
+      jobs,
     );
   }
 
@@ -194,6 +196,65 @@ describe('NotificationService', () => {
       [['n2'], NotificationPushStatus.SKIPPED, 'No push token'],
     ]);
     expect(result.pushFailed).toBe(1);
+  });
+
+  describe('with the queue add-on', () => {
+    const enqueue = jest.fn(async (..._args: unknown[]) => ({ id: 'j1' }));
+    const jobs: NotificationJobQueue = { enqueue };
+    const deliver = jest.fn(async (..._args: unknown[]) => undefined);
+    const channel: NotificationChannel = { name: 'email', deliver };
+
+    beforeEach(() => {
+      enqueue.mockClear();
+      deliver.mockClear();
+    });
+
+    it('turns a broadcast to everyone into one job and saves nothing yet', async () => {
+      const result = await service({}, jobs).send('all', { title: 'Hello' }, { campaignId: 'c1' });
+
+      expect(insert).not.toHaveBeenCalled();
+      expect(result).toEqual({ created: 0, pushSent: 0, pushFailed: 0, pushSkipped: 0, queued: true });
+      expect(enqueue).toHaveBeenCalledTimes(1);
+      const [name, data, opts] = enqueue.mock.calls[0] as [string, { options: unknown }, { attempts: number }];
+      expect(name).toBe('notifications.broadcast');
+      expect(data.options).toEqual({ campaignId: 'c1' });
+      expect(opts.attempts).toBe(1);
+    });
+
+    it('still sends to listed users right away, and queues one job per extra channel', async () => {
+      const result = await service({}, jobs, [channel]).send([U1, U2], { title: 'Hello' });
+
+      expect(result.created).toBe(2);
+      expect(enqueue.mock.calls.map(([name, data]) => [name, (data as { channel: string }).channel])).toEqual([['notifications.channel', 'email']]);
+      expect(deliver).not.toHaveBeenCalled();
+    });
+
+    it('queues a push retry for the failed rows, one run fewer than NOTIFICATION_PUSH_MAX_ATTEMPTS', async () => {
+      activePushTokens.mockResolvedValue([{ userId: U1, sessionId: 's-a', token: 'tok-a', platform: 'android' }]);
+      answer([], ['tok-a']);
+      await service({ FIREBASE_SERVICE_ACCOUNT_JSON: ACCOUNT_JSON, NOTIFICATION_PUSH_MAX_ATTEMPTS: '4' }, jobs).send([U1, U2], { title: 'Hello' });
+
+      expect(enqueue).toHaveBeenCalledTimes(1);
+      const [name, data, opts] = enqueue.mock.calls[0] as [string, { ids: string[] }, { attempts: number; backoff: { type: string } }];
+      expect(name).toBe('notifications.push-retry');
+      expect(data.ids).toEqual(['n1']);
+      expect(opts.attempts).toBe(3);
+      expect(opts.backoff.type).toBe('exponential');
+    });
+
+    it('does not queue a retry when only one attempt is allowed', async () => {
+      activePushTokens.mockResolvedValue([{ userId: U1, sessionId: 's-a', token: 'tok-a', platform: 'android' }]);
+      answer([], ['tok-a']);
+      await service({ FIREBASE_SERVICE_ACCOUNT_JSON: ACCOUNT_JSON, NOTIFICATION_PUSH_MAX_ATTEMPTS: '1' }, jobs).send([U1], { title: 'Hello' });
+      expect(enqueue).not.toHaveBeenCalled();
+    });
+
+    it('delivers a channel job through the channel of that name, and fails for an unknown one', async () => {
+      const svc = service({}, jobs, [channel]);
+      await svc.deliverChannel('email', [U1], { title: 'Hello' });
+      expect(deliver).toHaveBeenCalledWith([U1], { title: 'Hello' });
+      await expect(svc.deliverChannel('telegram', [U1], { title: 'Hello' })).rejects.toThrow('not set up');
+    });
   });
 
   it('needs a title', async () => {

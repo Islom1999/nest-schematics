@@ -28,6 +28,11 @@ export interface SendNotificationResult {
   pushSent: number;
   pushFailed: number;
   pushSkipped: number;
+  /**
+   * true when the broadcast (`'all'`) was handed to the job queue: nothing is
+   * counted yet, the job stores the totals on its campaign when it is done.
+   */
+  queued?: boolean;
 }
 
 /** A device that can receive pushes (one live `user_sessions` row with a push token). */
@@ -55,4 +60,42 @@ export interface PushTokenResult {
   /** The token is dead (unregistered or malformed): forget it. */
   invalid: boolean;
   error?: string;
+}
+
+/** Injection token of the job queue; only provided when the queue add-on is installed. */
+export const NOTIFICATION_JOBS = Symbol('NOTIFICATION_JOBS');
+
+/** The part of the queue's `JobsService` that notifications use. */
+export interface NotificationJobQueue {
+  enqueue(
+    name: string,
+    data: unknown,
+    opts?: { queue?: string; attempts?: number; delay?: number; backoff?: { type: 'exponential' | 'fixed'; delay: number } },
+  ): Promise<unknown>;
+}
+
+/** Queue and job names used when the queue add-on is installed. */
+export const NOTIFICATION_QUEUE = 'notifications';
+export const NOTIFICATION_JOB = {
+  /** One batch of users for one extra channel (telegram, email). */
+  channel: 'notifications.channel',
+  /** `send('all', ...)`: saves and pushes to every user in batches. */
+  broadcast: 'notifications.broadcast',
+  /** Pushes failed rows again; fails while some still fail, so the queue retries with backoff. */
+  pushRetry: 'notifications.push-retry',
+} as const;
+
+export interface ChannelJobData {
+  channel: string;
+  userIds: string[];
+  payload: NotificationPayload;
+}
+
+export interface BroadcastJobData {
+  payload: NotificationPayload;
+  options: SendNotificationOptions;
+}
+
+export interface PushRetryJobData {
+  ids: string[];
 }

@@ -29,6 +29,8 @@ import {
   requireFeatures,
   scheduleInstall,
 } from '../../utils/ops';
+import { hasQueue } from '../queue/wiring';
+import { registerNotificationJobs } from './jobs';
 import { registerNotificationRetry } from './retry';
 import { Schema } from './schema';
 
@@ -86,7 +88,8 @@ function authClientMethods(tree: Tree, root: string): string[] {
  * and `notification_campaigns` + migration, NotificationService
  * (`@app/common/notifications`: save, then push through FCM; telegram and
  * email channels), `client/notifications` and `admin/notifications` routes,
- * and with the worker a push retry job. Needs auth-client (push tokens live on
+ * and with the worker a push retry job (with the queue add-on: BullMQ jobs for
+ * broadcasts, extra channels and push retries instead). Needs auth-client (push tokens live on
  * its sessions). Re-run with more channels to add them.
  */
 export function notifications(options: Schema): Rule {
@@ -177,6 +180,7 @@ export function notifications(options: Schema): Rule {
       }
 
       registerNotificationRetry(host, context.logger, root);
+      registerNotificationJobs(host, context.logger, root);
       recordFeature(host, 'notifications', { channels }, undefined, root);
       scheduleInstall(context, options.skipInstall, root);
       return host;
@@ -190,7 +194,11 @@ export function notifications(options: Schema): Rule {
           `Notifications (${channels.join(', ')}): inject NotificationService from '@app/common/notifications'; ` +
             'routes under /api/client/notifications and /api/admin/notifications (notification.read / notification.write). ' +
             'Set FIREBASE_SERVICE_ACCOUNT_JSON for push and run npm run migration:run.' +
-            (hasFeature(_host, 'worker', root) ? '' : ' Without the worker, failed pushes are not retried.'),
+            (hasQueue(_host, root)
+              ? ' With the queue: broadcasts to everyone, telegram/email and failed-push retries run as BullMQ jobs.'
+              : hasFeature(_host, 'worker', root)
+                ? ''
+                : ' Without the worker, failed pushes are not retried.'),
         );
       },
     ]);

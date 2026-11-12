@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
@@ -7,6 +7,10 @@ import { Notification, NotificationCampaign, NotificationPushStatus, User } from
 import { FcmSender } from './fcm.sender';
 import { NOTIFICATION_CHANNELS, NotificationChannel } from './notification-channel';
 import {
+  NOTIFICATION_JOB,
+  NOTIFICATION_JOBS,
+  NOTIFICATION_QUEUE,
+  NotificationJobQueue,
   NotificationPayload,
   PushMessage,
   PushTarget,
@@ -31,7 +35,12 @@ interface PushCounts {
   sent: number;
   failed: number;
   skipped: number;
+  /** Rows whose push failed on every device (the retry covers them). */
+  failedIds: string[];
 }
+
+/** Columns a push retry needs. */
+const RETRY_COLUMNS = ['n.id', 'n.userId', 'n.campaignId', 'n.type', 'n.title', 'n.body', 'n.link', 'n.image'];
 
 type NormalizedPayload = Required<Omit<NotificationPayload, 'meta'>> & { meta: Record<string, unknown> | null };
 
@@ -54,11 +63,16 @@ function chunks<T>(items: T[], size: number): T[][] {
  * With the worker installed, failed pushes are retried with backoff
  * (`retryFailedPushes()`, up to NOTIFICATION_PUSH_MAX_ATTEMPTS); without it
  * there is a single attempt.
+ *
+ * With the queue add-on (BullMQ jobs, see `notification-jobs.module.ts`) the
+ * slow parts become jobs: `send('all', ...)` runs as a `notifications.broadcast`
+ * job, telegram/email deliveries are `notifications.channel` jobs, and failed
+ * pushes are retried by the queue (attempts + backoff) instead of the cron job.
  */
 @Injectable()
 export class NotificationService {
   private readonly logger = new Logger('Notifications');
-  /** Extra channels run one batch after another, in the background (in-process). */
+  /** Without the queue add-on: extra channels run one batch after another, in the background (in-process). */
   private channelQueue: Promise<void> = Promise.resolve();
 
   constructor(
@@ -69,6 +83,8 @@ export class NotificationService {
     private readonly fcm: FcmSender,
     @Inject(NOTIFICATION_CHANNELS) private readonly channels: NotificationChannel[],
     private readonly config: ConfigService,
+    /** Only there with the queue add-on. */
+    @Optional() @Inject(NOTIFICATION_JOBS) private readonly jobs: NotificationJobQueue | null = null,
   ) {}
 
   /**
@@ -77,6 +93,52 @@ export class NotificationService {
    */
   async send(to: string[] | 'all', payload: NotificationPayload, options: SendNotificationOptions = {}): Promise<SendNotificationResult> {
     const data = this.normalize(payload);
+    if (to === 'all' && this.jobs) {
+      // The loop over every user is a job: no retries, it would save the rows twice.
+      await this.jobs.enqueue(NOTIFICATION_JOB.broadcast, { payload: data, options }, { queue: NOTIFICATION_QUEUE, attempts: 1 });
+      return { created: 0, pushSent: 0, pushFailed: 0, pushSkipped: 0, queued: true };
+    }
+    return this.sendNow(to, data, options);
+  }
+
+  /**
+   * The `notifications.broadcast` job: sends to every user now and, for an
+   * admin campaign, stores the totals on it (`sentCount`, `failedCount`).
+   */
+  async runBroadcast(payload: NotificationPayload, options: SendNotificationOptions): Promise<SendNotificationResult> {
+    const result = await this.sendNow('all', this.normalize(payload), options);
+    if (options.campaignId) {
+      await this.campaigns.update(options.campaignId, { sentCount: result.created, failedCount: result.pushFailed });
+    }
+    return result;
+  }
+
+  /** The `notifications.channel` job: one batch of users for one extra channel. Throws, so the queue retries. */
+  async deliverChannel(name: string, userIds: string[], payload: NotificationPayload): Promise<void> {
+    const channel = this.channels.find((c) => c.name === name);
+    if (!channel) throw new Error(`Notification channel "${name}" is not set up in this process`);
+    await channel.deliver(userIds, payload);
+  }
+
+  /**
+   * The `notifications.push-retry` job: pushes the still-failed, unread rows of
+   * `ids` again. Throws while some still fail, so the queue retries with backoff.
+   */
+  async retryPush(ids: string[]): Promise<number> {
+    if (!ids.length || (await this.fcm.disabledReason())) return 0;
+    const rows = await this.notifications
+      .createQueryBuilder('n')
+      .select(RETRY_COLUMNS)
+      .where('n.id IN (:...ids)', { ids })
+      .andWhere('n.pushStatus = :failed', { failed: NotificationPushStatus.FAILED })
+      .andWhere('n.readAt IS NULL')
+      .getMany();
+    const { retried, failed } = await this.pushAgain(rows);
+    if (failed) throw new Error(`${failed} of ${retried} push(es) failed again`);
+    return retried;
+  }
+
+  private async sendNow(to: string[] | 'all', data: NormalizedPayload, options: SendNotificationOptions): Promise<SendNotificationResult> {
     const result: SendNotificationResult = { created: 0, pushSent: 0, pushFailed: 0, pushSkipped: 0 };
     for await (const userIds of this.recipients(to, options.platform ?? null)) {
       const rows = await this.saveRows(userIds, data, options);
@@ -88,8 +150,9 @@ export class NotificationService {
         result.pushSent += counts.sent;
         result.pushFailed += counts.failed;
         result.pushSkipped += counts.skipped;
+        await this.enqueuePushRetry(counts.failedIds);
       }
-      this.enqueueChannels(rows.map((r) => r.userId), data);
+      await this.enqueueChannels(rows.map((r) => r.userId), data);
     }
     return result;
   }
@@ -105,7 +168,7 @@ export class NotificationService {
     if (await this.fcm.disabledReason()) return 0;
     const rows = await this.notifications
       .createQueryBuilder('n')
-      .select(['n.id', 'n.userId', 'n.campaignId', 'n.type', 'n.title', 'n.body', 'n.link', 'n.image'])
+      .select(RETRY_COLUMNS)
       .where('n.pushStatus = :failed', { failed: NotificationPushStatus.FAILED })
       .andWhere('n.pushAttempts < :max', { max: this.maxAttempts() })
       .andWhere('n.readAt IS NULL')
@@ -116,8 +179,12 @@ export class NotificationService {
       .orderBy('n.createdAt', 'ASC')
       .limit(limit)
       .getMany();
-    if (!rows.length) return 0;
+    return (await this.pushAgain(rows)).retried;
+  }
 
+  /** Pushes these (failed) rows again, one message per campaign. */
+  private async pushAgain(rows: Notification[]): Promise<{ retried: number; failed: number }> {
+    if (!rows.length) return { retried: 0, failed: 0 };
     // Rows of one campaign share the message, so they go out together.
     const groups = new Map<string, Notification[]>();
     for (const row of rows) {
@@ -130,14 +197,16 @@ export class NotificationService {
       const campaigns = await this.campaigns.find({ select: { id: true, filters: true }, where: { id: In(campaignIds) } });
       for (const c of campaigns) platforms.set(c.id, c.filters?.platform ?? null);
     }
+    let failed = 0;
     for (const group of groups.values()) {
       const first = group[0];
       const data = this.normalize(first);
       const platform = first.campaignId ? (platforms.get(first.campaignId) ?? null) : null;
-      await this.pushRows(group, this.message(data, group, first.campaignId), platform);
+      failed += (await this.pushRows(group, this.message(data, group, first.campaignId), platform)).failed;
     }
-    return rows.length;
+    return { retried: rows.length, failed };
   }
+
 
   /** NOTIFICATION_PUSH_MAX_ATTEMPTS (default 5). */
   maxAttempts(): number {
@@ -152,7 +221,7 @@ export class NotificationService {
    * has no device. Dead tokens are removed from their sessions.
    */
   private async pushRows(rows: SavedRow[], message: PushMessage, platform: string | null): Promise<PushCounts> {
-    const counts: PushCounts = { sent: 0, failed: 0, skipped: 0 };
+    const counts: PushCounts = { sent: 0, failed: 0, skipped: 0, failedIds: [] };
     if (!rows.length) return counts;
 
     const disabled = await this.fcm.disabledReason();
@@ -201,6 +270,7 @@ export class NotificationService {
       } else if (result) {
         add(row.id, NotificationPushStatus.FAILED, result.error ?? 'Push failed', true);
         counts.failed++;
+        counts.failedIds.push(row.id);
       } else {
         add(row.id, NotificationPushStatus.SKIPPED, 'Push tokens were invalid (removed)', true);
         counts.skipped++;
@@ -305,11 +375,24 @@ export class NotificationService {
 
   /**
    * Extra channels (telegram, email) are slow (rate limits), so they run after
-   * `send()` returns, one batch at a time. In-process: a restart drops what is
-   * still waiting.
+   * `send()` returns. With the queue add-on each channel gets a
+   * `notifications.channel` job (retried with backoff, survives a restart);
+   * without it they run in-process, one batch at a time, and a restart drops
+   * what is still waiting.
    */
-  private enqueueChannels(userIds: string[], data: NormalizedPayload): void {
+  private async enqueueChannels(userIds: string[], data: NormalizedPayload): Promise<void> {
     if (!this.channels.length || !userIds.length) return;
+    if (this.jobs) {
+      for (const channel of this.channels) {
+        try {
+          await this.jobs.enqueue(NOTIFICATION_JOB.channel, { channel: channel.name, userIds, payload: data }, { queue: NOTIFICATION_QUEUE });
+        } catch (error) {
+          // The rows are saved; a queue outage must not fail send().
+          this.logger.error(`Could not queue channel ${channel.name} for ${userIds.length} user(s): ${(error as Error).message}`);
+        }
+      }
+      return;
+    }
     this.channelQueue = this.channelQueue.then(async () => {
       for (const channel of this.channels) {
         try {
@@ -319,5 +402,27 @@ export class NotificationService {
         }
       }
     });
+  }
+
+  /**
+   * With the queue add-on, failed pushes are retried by BullMQ instead of the
+   * worker's cron job: one job per batch, first run and every retry delayed
+   * 1, 2, 4... minutes, NOTIFICATION_PUSH_MAX_ATTEMPTS - 1 runs in all (the
+   * first attempt already happened).
+   */
+  private async enqueuePushRetry(failedIds: string[]): Promise<void> {
+    const attempts = this.maxAttempts() - 1;
+    if (!this.jobs || !failedIds.length || attempts < 1) return;
+    for (const ids of chunks(failedIds, BATCH)) {
+      try {
+        await this.jobs.enqueue(
+          NOTIFICATION_JOB.pushRetry,
+          { ids },
+          { queue: NOTIFICATION_QUEUE, attempts, delay: RETRY_BASE_SECONDS * 1000, backoff: { type: 'exponential', delay: RETRY_BASE_SECONDS * 1000 } },
+        );
+      } catch (error) {
+        this.logger.error(`Could not queue the push retry for ${ids.length} notification(s): ${(error as Error).message}`);
+      }
+    }
   }
 }

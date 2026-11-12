@@ -1,5 +1,5 @@
 import { HostTree, Tree } from '@angular-devkit/schematics';
-import { addNestApp, addNestAssets, addWorkerJob, hasWorker, insertAtMarker, MARKERS, WORKER_MODULE } from './index';
+import { addNestApp, addNestAssets, addWorkerJob, hasWorker, insertAtMarker, MARKERS, removeWorkerJob, WORKER_MODULE } from './index';
 
 function read(tree: Tree, p: string): string {
   return tree.read(p)!.toString('utf-8');
@@ -89,6 +89,21 @@ describe('ops/apps', () => {
     expect(text).toContain(`import { ApiLogModule, BarJob } from '@app/common';`);
     expect(text).toContain('    ScheduleModule.forRoot(),\n    ApiLogModule,\n');
     expect(text.match(/FooJob/g)!.length).toBe(2);
+  });
+
+  it('removes a worker job and its import, and tells when it is not there', () => {
+    tree.create(`/${WORKER_MODULE}`, WORKER);
+    addWorkerJob(tree, 'FooJob', './jobs/foo.job');
+    addWorkerJob(tree, 'BarJob', '@app/common');
+    addWorkerJob(tree, 'BazJob', '@app/common');
+    expect(removeWorkerJob(tree, 'FooJob')).toBeTrue();
+    expect(removeWorkerJob(tree, 'FooJob')).toBeFalse();
+    expect(removeWorkerJob(tree, 'BarJob')).toBeTrue();
+    const text = read(tree, `/${WORKER_MODULE}`);
+    expect(text).not.toContain('FooJob');
+    expect(text).not.toContain('BarJob');
+    expect(text).toContain(`import { BazJob } from '@app/common';`);
+    expect(text).toContain('    WorkerService,\n    BazJob,\n    // @ns:worker-jobs\n');
   });
 });
 

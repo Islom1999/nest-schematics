@@ -60,6 +60,10 @@ Register it in `src/collection.json` (`"factory": "./add-ons/<name>/index#<camel
      module and call `registerJobHandlers(tree, 'XJobsModule', '@app/common')`
      (`src/add-ons/queue/wiring.ts`); they run in apps/worker when it exists (in either
      install order), otherwise in the api. Enqueue with `JobsService.enqueue(name, data, opts)`.
+     An add-on that moves onto jobs only when queue is present (notifications:
+     `src/add-ons/notifications/jobs.ts`) exposes `registerXJobs(tree, logger, root)`, which checks
+     both features and is called by its own generator and by the queue generator;
+     its worker part goes in the add-on's DEFERRED_JOBS entry (it must also drop the cron job).
    If you need a new kind of edit, add a helper to `src/utils/ops` with a unit test in
    `ops_spec.ts` rather than string-replacing in your add-on.
 5. **Re-running changes nothing.** The e2e runs every step twice and fails on any diff.

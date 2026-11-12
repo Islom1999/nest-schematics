@@ -18,7 +18,8 @@ export class NotificationAdminService {
   /**
    * Saves the campaign, then a notification per recipient, pushes them and
    * stores the totals (`sentCount` = notifications created, `failedCount` =
-   * pushes that failed on the first attempt).
+   * pushes that failed on the first attempt). With the queue add-on a
+   * broadcast to everyone is a job, so the totals arrive when it finishes.
    */
   async broadcast(dto: BroadcastNotificationDto, adminId: string | null): Promise<NotificationCampaign> {
     const filters =
@@ -44,9 +45,12 @@ export class NotificationAdminService {
       { type: campaign.type, title: dto.title, body: dto.body, link: dto.link, image: dto.image, meta: dto.meta },
       { campaignId: campaign.id, platform: dto.target === NotificationTarget.PLATFORM ? (dto.platform ?? null) : null },
     );
-    campaign.sentCount = result.created;
-    campaign.failedCount = result.pushFailed;
-    await this.campaigns.update(campaign.id, { sentCount: campaign.sentCount, failedCount: campaign.failedCount });
+    // A queued broadcast (queue add-on) stores its own totals when the job is done.
+    if (!result.queued) {
+      campaign.sentCount = result.created;
+      campaign.failedCount = result.pushFailed;
+      await this.campaigns.update(campaign.id, { sentCount: campaign.sentCount, failedCount: campaign.failedCount });
+    }
     return campaign;
   }
 

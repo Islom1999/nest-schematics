@@ -11,6 +11,7 @@ import {
   requireFeatures,
   scheduleInstall,
 } from '../../utils/ops';
+import { registerNotificationJobs } from '../notifications/jobs';
 import { Schema } from './schema';
 import { wireQueueProcessors } from './wiring';
 
@@ -41,6 +42,8 @@ export function queue(options: Schema): Rule {
       addPermissions(host, 'queue', ['read'], root);
       addPackageJson(host, { dependencies: QUEUE_DEPENDENCIES }, root);
       recordFeature(host, 'queue', {}, undefined, root);
+      // notifications installed first: its work moves onto jobs
+      registerNotificationJobs(host, context.logger, root);
       scheduleInstall(context, options.skipInstall, root);
       return host;
     };

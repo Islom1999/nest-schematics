@@ -1,14 +1,27 @@
 import { logging } from '@angular-devkit/core';
 import { Tree } from '@angular-devkit/schematics';
-import { addWorkerJob, hasFeature, hasWorker, WORKER_JOBS_MARKER, WORKER_MODULE } from '../../utils/ops';
+import {
+  addModuleImport,
+  addWorkerJob,
+  hasFeature,
+  hasWorker,
+  removeWorkerJob,
+  setModuleImport,
+  WORKER_JOBS_MARKER,
+  WORKER_MODULE,
+} from '../../utils/ops';
+import { hasQueue } from '../queue/wiring';
 
 /**
  * Push retry job shared by both install orders:
  * - `notifications` after `worker`: notifications registers it;
  * - `worker` after `notifications`: worker registers it (DEFERRED_JOBS).
+ * With the queue add-on there is no cron job: BullMQ retries the failed pushes
+ * (see jobs.ts), and the worker gets the full NotificationModule instead.
  */
 export const RETRY_JOB_FILE = 'apps/worker/src/jobs/notification-push-retry.job.ts';
 export const NOTIFICATION_MODULE_FILE = 'libs/common/src/notifications/notification.module.ts';
+const EMAIL_CHANNEL_FILE = 'libs/common/src/notifications/channels/email.channel.ts';
 
 const RETRY_JOB = `import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
@@ -51,10 +64,32 @@ export function hasNotifications(tree: Tree, root = ''): boolean {
 }
 
 /**
+ * With the queue: no cron job. The worker (when there is one) runs the jobs, so
+ * it gets NotificationModule with the channels (not push only), plus
+ * MailModule for the email channel; a cron job from an earlier install is
+ * removed. Returns false: no cron job is registered.
+ */
+function useQueueRetries(tree: Tree, logger: logging.LoggerApi, root: string): false {
+  if (!hasWorker(tree, root)) return false;
+  const worker = prefixed(root, WORKER_MODULE);
+  if (removeWorkerJob(tree, 'NotificationPushRetryJob', root)) {
+    const file = prefixed(root, RETRY_JOB_FILE);
+    if (tree.exists(file)) tree.delete(file);
+    logger.info('Notifications: NotificationPushRetryJob removed, failed pushes are retried by the queue (BullMQ).');
+  }
+  addModuleImport(tree, worker, 'NotificationModule', '@app/common/notifications', 'NotificationModule.forRoot()');
+  setModuleImport(tree, worker, 'NotificationModule', 'NotificationModule.forRoot()');
+  if (tree.exists(prefixed(root, EMAIL_CHANNEL_FILE))) addModuleImport(tree, worker, 'MailModule', '@app/common');
+  return false;
+}
+
+/**
  * Adds NotificationPushRetryJob (and NotificationModule, push only) to the
  * worker when the worker app is there. Returns false, with a hint, when it is not.
+ * With the queue installed it wires the queue retries instead (see above).
  */
 export function registerNotificationRetry(tree: Tree, logger: logging.LoggerApi, root = ''): boolean {
+  if (hasQueue(tree, root)) return useQueueRetries(tree, logger, root);
   if (!hasWorker(tree, root)) {
     if (tree.exists(prefixed(root, WORKER_MODULE))) {
       logger.warn(

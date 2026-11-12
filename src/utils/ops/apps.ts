@@ -154,3 +154,24 @@ export function addWorkerJob(
   addNamedImports(tree, path, [{ name: className, from }]);
   return added;
 }
+
+/**
+ * Undoes {@link addWorkerJob}: removes the provider and its import from
+ * WorkerModule. Modules added with the job stay (they may serve other jobs).
+ *
+ * @returns false when the job was not registered.
+ */
+export function removeWorkerJob(tree: Tree, className: string, root = ''): boolean {
+  const path = prefixed(root, WORKER_MODULE);
+  if (!tree.exists(path)) return false;
+  const text = readText(tree, path);
+  const provider = new RegExp(`^[ \\t]*${className},[ \\t]*\\r?\\n`, 'm');
+  if (!provider.test(text)) return false;
+  const next = text
+    .replace(provider, '')
+    // `import { Job } from '...';` on its own, or `Job` among other named imports
+    .replace(new RegExp(`^import \\{ ${className} \\} from '[^']+';\\r?\\n`, 'm'), '')
+    .replace(new RegExp(`^(import \\{[^}\\n]*?)(?:, ${className}\\b|\\b${className}, )`, 'm'), '$1');
+  writeText(tree, path, next);
+  return true;
+}

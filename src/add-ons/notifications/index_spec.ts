@@ -187,4 +187,102 @@ describe('notifications add-on', () => {
       expect(snapshot(again.tree)).toEqual(snapshot(workerFirst));
     });
   });
+  describe('queue', () => {
+    const API_MODULE = '/apps/api/src/api.module.ts';
+    const JOBS_FILE = `${LIB}/notification-jobs.module.ts`;
+    const JOBS_FROM = '@app/common/notifications/notification-jobs.module';
+
+    /** Installs the add-ons in this order on top of starter + redis + auth. */
+    async function install(order: string[]): Promise<UnitTestTree> {
+      let tree = (await run(runner, 'redis', {}, withAuth)).tree;
+      for (const name of order) tree = (await run(runner, name, {}, tree)).tree;
+      return tree;
+    }
+
+    function workerImports(tree: UnitTestTree): string[] {
+      const text = tree.readContent(WORKER_MODULE);
+      return /imports: \[([\s\S]*?)\n {2}\]/.exec(text)![1].split('\n').map((l) => l.trim()).filter(Boolean).sort();
+    }
+
+    function expectJobsWired(tree: UnitTestTree, worker: boolean): void {
+      const jobs = tree.readContent(JOBS_FILE);
+      for (const name of ['notifications.channel', 'notifications.broadcast', 'notifications.push-retry']) {
+        expect(jobs).withContext(name).not.toContain(`'${name}'`); // names come from NOTIFICATION_JOB
+      }
+      expect(jobs).toContain('@JobHandler(NOTIFICATION_JOB.channel');
+      expect(jobs).toContain('{ provide: NOTIFICATION_JOBS, useExisting: JobsService }');
+      expect(tree.readContent(`${LIB}/notification.types.ts`)).toContain("channel: 'notifications.channel'");
+      expect(tree.readContent(`${LIB}/index.ts`)).not.toContain('notification-jobs');
+      expect(tree.readContent(API_MODULE)).toContain(`import { NotificationJobsModule } from '${JOBS_FROM}';`);
+      expect(manifest(tree)['queue']).toEqual(
+        jasmine.objectContaining({ items: [`handlers:NotificationJobsModule|${JOBS_FROM}`] }),
+      );
+      if (!worker) return;
+      const module = tree.readContent(WORKER_MODULE);
+      expect(module).toContain(`import { NotificationJobsModule } from '${JOBS_FROM}';`);
+      expect(module).toContain('NotificationModule.forRoot(),');
+      expect(module).not.toContain('channels: false');
+      expect(module).not.toContain('NotificationPushRetryJob');
+      expect(tree.exists(JOB)).toBeFalse();
+    }
+
+    const orders: { name: string; order: string[]; worker: boolean }[] = [
+      { name: 'notifications, queue', order: ['notifications', 'queue'], worker: false },
+      { name: 'queue, notifications', order: ['queue', 'notifications'], worker: false },
+      { name: 'notifications, worker, queue', order: ['notifications', 'worker', 'queue'], worker: true },
+      { name: 'worker, notifications, queue', order: ['worker', 'notifications', 'queue'], worker: true },
+      { name: 'queue, notifications, worker', order: ['queue', 'notifications', 'worker'], worker: true },
+      { name: 'queue, worker, notifications', order: ['queue', 'worker', 'notifications'], worker: true },
+      { name: 'worker, queue, notifications', order: ['worker', 'queue', 'notifications'], worker: true },
+      { name: 'notifications, queue, worker', order: ['notifications', 'queue', 'worker'], worker: true },
+    ];
+    const results = new Map<string, Promise<UnitTestTree>>();
+    const installed_ = (o: { name: string; order: string[] }) => {
+      if (!results.has(o.name)) results.set(o.name, install(o.order));
+      return results.get(o.name)!;
+    };
+
+    for (const { name, order, worker } of orders) {
+      it(`moves the work onto jobs: ${name}`, async () => {
+        const tree = await installed_({ name, order });
+        expectJobsWired(tree, worker);
+        if (!worker) expect(tree.exists(WORKER_MODULE)).toBeFalse();
+        // re-running either generator changes nothing
+        for (const again of ['notifications', 'queue']) {
+          expect(snapshot((await run(runner, again, {}, tree)).tree)).withContext(`re-run ${again}`).toEqual(snapshot(tree));
+        }
+      });
+    }
+
+    it('ends in the same project whatever the order (worker: same imports and files)', async () => {
+      const withWorker = await Promise.all(orders.filter((o) => o.worker).map(installed_));
+      const [first, ...rest] = withWorker;
+      expect(first).toBeDefined();
+      for (const tree of rest) {
+        expect(workerImports(tree)).toEqual(workerImports(first));
+        const files = (t: UnitTestTree) => [...snapshot(t).keys()].map((f) => f.replace(/\/\d{13}-/, '/<ts>-')).sort();
+        expect(files(tree)).toEqual(files(first));
+        expect(tree.readContent(JOBS_FILE)).toEqual(first.readContent(JOBS_FILE));
+      }
+      const noWorker = await Promise.all(orders.filter((o) => !o.worker).map(installed_));
+      const lines = (t: UnitTestTree) => t.readContent(API_MODULE).split('\n').sort();
+      expect(lines(noWorker[0])).toEqual(lines(noWorker[1]));
+      expect(manifest(noWorker[0])['queue']).toEqual(manifest(noWorker[1])['queue']);
+    });
+
+    it('gives the worker the mail module for the email channel', async () => {
+      const tree = (await run(runner, 'notifications', { channels: 'email' }, await install(['worker', 'queue']))).tree;
+      expect(tree.readContent(WORKER_MODULE)).toContain('MailModule,');
+      expect(tree.readContent(WORKER_MODULE)).toContain('NotificationModule.forRoot(),');
+      expect(snapshot((await run(runner, 'notifications', { channels: 'email' }, tree)).tree)).toEqual(snapshot(tree));
+    });
+
+    it('changes nothing without the queue: no jobs file, the cron retry job stays', async () => {
+      const tree = await install(['notifications', 'worker']);
+      expect(tree.exists(JOBS_FILE)).toBeFalse();
+      expect(tree.readContent(WORKER_MODULE)).toContain('NotificationPushRetryJob,');
+      expect(tree.readContent(WORKER_MODULE)).toContain('NotificationModule.forRoot({ channels: false })');
+      expect(tree.readContent(API_MODULE)).not.toContain('NotificationJobsModule');
+    });
+  });
 });
