@@ -4,7 +4,8 @@
 # exercised against the running API (tusd itself runs in docker-compose).
 # Smoke (node engine, admin token): create with Upload-Length, PATCH two chunks,
 # HEAD to resume in between, then the media_files row, the result route and
-# GET files/:id must match. Anonymous create → 401, oversize Upload-Length → 413.
+# GET files/:id must match. Anonymous create → 401, oversize Upload-Length → 413,
+# fake PNG → 415 on finish; with auth-client a user token uploads as well.
 run_g upload-tus --engine tusd --skip-install
 run_g upload-tus --engine node --skip-install
 
@@ -87,6 +88,30 @@ upload_tus_smoke() {
   [ "$(curl -fsS "$base/files/tus/$upload_id/result" | json '.status')" = "failed" ] || fail "the refused upload is not reported as failed."
 
   curl -fsS -X DELETE "$base/admin/files/$media_id" -H "authorization: Bearer $access" >/dev/null || fail "DELETE admin/files/$media_id failed"
+
+  # With auth-client (52 runs before this step) a user token may create uploads too.
+  if [ -d apps/api/src/client-auth ]; then
+    local user user_id
+    body=$(curl -fsS -X POST "$base/client/auth/email/sign-up" -H 'content-type: application/json' -H 'x-device-id: e2e-tus' \
+      -d "{\"email\":\"e2e-tus-$(date +%s)-$$@example.com\",\"password\":\"TusPass1234\"}") || fail "client sign-up failed"
+    user=$(echo "$body" | json '.accessToken')
+    user_id=$(echo "$body" | json '.user.id')
+    [ -n "$user" ] && [ -n "$user_id" ] || fail "client sign-up has no token: $body"
+    size=$(wc -c <"$WORK/tus.png" | tr -d ' ')
+    code=$(curl -s -o /dev/null -D "$WORK/tus-user.h" -w '%{http_code}' -X POST "$base/files/tus" -H "authorization: Bearer $user" \
+      -H 'Tus-Resumable: 1.0.0' -H "Upload-Length: $size" -H "Upload-Metadata: $meta")
+    [ "$code" = "201" ] || { cat "$WORK/tus-user.h"; fail "tus create with a user token returned $code, expected 201."; }
+    upload_id="$(header location "$WORK/tus-user.h")"
+    upload_id="${upload_id##*/}"
+    code=$(curl -s -o /dev/null -D "$WORK/tus-user-p.h" -w '%{http_code}' -X PATCH "$base/files/tus/$upload_id" \
+      -H 'Tus-Resumable: 1.0.0' -H 'Upload-Offset: 0' -H 'Content-Type: application/offset+octet-stream' --data-binary "@$WORK/tus.png")
+    [ "$code" = "204" ] || { cat "$WORK/tus-user-p.h"; fail "user PATCH returned $code, expected 204."; }
+    media_id=$(header upload-media-id "$WORK/tus-user-p.h")
+    [ "$(PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -tAc \
+      "SELECT uploaded_by_type || '|' || uploaded_by_id || '|' || used FROM media_files WHERE id = '$media_id'")" = "user|$user_id|false" ] \
+      || fail "media_files row of the user upload $media_id is missing or wrong."
+    curl -fsS -X DELETE "$base/admin/files/$media_id" -H "authorization: Bearer $access" >/dev/null || fail "DELETE admin/files/$media_id failed"
+  fi
   log "upload-tus OK"
 }
 
