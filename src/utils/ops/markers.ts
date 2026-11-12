@@ -38,7 +38,7 @@ export const MARKERS = {
 export function insertAtMarker(tree: Tree, path: string, marker: string, code: string, key = code.trim()): boolean {
   const text = readText(tree, path);
   const lines = text.split('\n');
-  const index = lines.findIndex((l) => l.trim() === marker);
+  const index = lines.findIndex((l) => isMarkerLine(l, marker));
   if (index < 0) {
     throw new SchematicsException(
       `Marker "${marker}" not found in ${path}. Restore it, or add this code manually:\n${code}`,
@@ -55,6 +55,12 @@ export function insertAtMarker(tree: Tree, path: string, marker: string, code: s
   return true;
 }
 
+/** `// @ns:env` also matches `// @ns:env (add-ons insert their keys above this line)`. */
+function isMarkerLine(line: string, marker: string): boolean {
+  const text = line.trim();
+  return text === marker || text.startsWith(`${marker} `);
+}
+
 /** Strips each line's indentation so a check does not depend on where the code sits. */
 function dedent(text: string): string {
   return text
@@ -64,5 +70,5 @@ function dedent(text: string): string {
 }
 
 export function hasMarker(tree: Tree, path: string, marker: string): boolean {
-  return tree.exists(path) && readText(tree, path).split('\n').some((l) => l.trim() === marker);
+  return tree.exists(path) && readText(tree, path).split('\n').some((l) => isMarkerLine(l, marker));
 }
