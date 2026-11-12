@@ -1,5 +1,6 @@
 import { ConfigService } from '@nestjs/config';
 import { TypeOrmModuleOptions } from '@nestjs/typeorm';
+import { isSwaggerExport } from '@app/common/swagger/export-mode';
 import { SnakeNamingStrategy } from './snake-naming.strategy';
 
 /**
@@ -20,5 +21,7 @@ export function createTypeOrmOptions(config: ConfigService): TypeOrmModuleOption
     namingStrategy: new SnakeNamingStrategy(),
     synchronize: config.get<string>('DB_SYNCHRONIZE') === 'true',
     logging: config.get<string>('DB_LOGGING') === 'true',
+    // `npm run swagger:export` builds the docs without a database.
+    manualInitialization: isSwaggerExport(),
   };
 }

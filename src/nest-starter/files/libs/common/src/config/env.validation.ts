@@ -31,6 +31,18 @@ class EnvironmentVariables {
 
   @IsString()
   DB_DATABASE: string;
+
+  @IsOptional()
+  @IsIn(['true', 'false', ''])
+  SWAGGER_ENABLED?: string;
+
+  @IsOptional()
+  @IsString()
+  SWAGGER_USER?: string;
+
+  @IsOptional()
+  @IsString()
+  SWAGGER_PASSWORD?: string;
   // @ns:env (add-ons insert their keys above this line)
 }
 

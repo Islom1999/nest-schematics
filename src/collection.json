@@ -12,6 +12,11 @@
       "factory": "./nest-crud/index#nestCrud",
       "schema": "./nest-crud/schema.json",
       "aliases": ["crud", "resource"]
+    },
+    "openapi-client": {
+      "description": "Add an openapi-generator client target (typescript-angular, dart-dio, typescript-fetch): openapitools.json and api:generate scripts",
+      "factory": "./add-ons/openapi-client/index#openapiClient",
+      "schema": "./add-ons/openapi-client/schema.json"
     }
   }
 }

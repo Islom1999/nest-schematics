@@ -1,0 +1,47 @@
+{
+  "$schema": "http://json-schema.org/schema",
+  "$id": "NestSchematicsOpenapiClient",
+  "title": "OpenAPI client target",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Target name (admin, web, mobile, ...): script api:generate:<name> and the openapitools.json generator key",
+      "$default": {
+        "$source": "argv",
+        "index": 0
+      }
+    },
+    "doc": {
+      "type": "string",
+      "description": "OpenAPI document to generate from (openapi/<doc>.json): admin or client. Default: admin for --name admin, otherwise client"
+    },
+    "generator": {
+      "type": "string",
+      "description": "openapi-generator generator",
+      "enum": ["typescript-angular", "dart-dio", "typescript-fetch"],
+      "default": "typescript-angular",
+      "alias": "g"
+    },
+    "target": {
+      "type": "string",
+      "description": "Output folder of the generated client, relative to the project (e.g. ../shop-admin/src/app/core/api)",
+      "alias": "t"
+    },
+    "pubName": {
+      "type": "string",
+      "description": "dart-dio only: Dart package name. Default: <project>_<name>_api"
+    },
+    "skipInstall": {
+      "type": "boolean",
+      "description": "Do not run npm install",
+      "default": false
+    },
+    "force": {
+      "type": "boolean",
+      "description": "Replace an existing target with the same name",
+      "default": false
+    }
+  },
+  "required": ["name", "target"]
+}

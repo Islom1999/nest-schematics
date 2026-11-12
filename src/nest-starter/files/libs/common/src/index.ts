@@ -9,3 +9,4 @@ export * from './filters/all-exceptions.filter';
 export * from './query/table-query';
 export * from './validation/validate-dto';
 export * from './permissions';
+export * from './swagger';

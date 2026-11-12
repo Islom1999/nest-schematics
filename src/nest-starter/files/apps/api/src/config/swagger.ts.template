@@ -1,25 +1,110 @@
-import { INestApplication } from '@nestjs/common';
-import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { INestApplication, Logger } from '@nestjs/common';
+import { DocumentBuilder, OpenAPIObject, SwaggerModule } from '@nestjs/swagger';
+import {
+  findDuplicateOperationIds,
+  operationIdFactory,
+  splitDocument,
+  swaggerBasicAuth,
+  SwaggerDocumentSpec,
+} from '@app/common';
+
+/** Global route prefix. Keep in sync with `app.setGlobalPrefix()` in main.ts. */
+export const API_PREFIX = 'api';
+
+/** Docs UI root: `/docs` lists every document, `/docs/<name>` shows one. */
+export const DOCS_PATH = 'docs';
 
 /**
- * API docs on /docs. On by default outside production; in production only
- * with SWAGGER_ENABLED=true, so the route list is never public by accident.
+ * The OpenAPI documents. A route goes to the document with the longest
+ * matching prefix (after `/api`); the `fallback` document takes the rest.
+ * Each is served at `/docs/<name>` (JSON: `/docs/<name>-json`) and exported to
+ * `openapi/<name>.json` by `npm run swagger:export`. Add-ons add prefixes at
+ * the `@ns:swagger-*` markers.
+ */
+export const SWAGGER_DOCUMENTS: SwaggerDocumentSpec[] = [
+  {
+    name: 'admin',
+    title: '<%= classify(name) %> Admin API',
+    // No `*` + `/` in descriptions: generators copy them into code comments.
+    description:
+      'Admin panel API: routes under /api/admin and /api/auth (Bearer JWT). Tables use ' +
+      '`POST <resource>/pagination` with a PrimeNG lazy-load body and return `{ count, data }`.',
+    prefixes: [
+      'admin',
+      'auth',
+      // @ns:swagger-admin
+    ],
+  },
+  {
+    name: 'client',
+    title: '<%= classify(name) %> Client API',
+    description: 'Public and client-facing API (web and mobile apps).',
+    prefixes: [
+      // @ns:swagger-client
+    ],
+    fallback: true,
+  },
+];
+
+/** Builds every document from the app's routes (also used by `npm run swagger:export`). */
+export function createSwaggerDocuments(app: INestApplication): Record<string, OpenAPIObject> {
+  const config = new DocumentBuilder()
+    .setTitle('<%= classify(name) %> API')
+    .setVersion('1.0')
+    .addBearerAuth({ type: 'http', scheme: 'bearer', bearerFormat: 'JWT' }, 'bearer')
+    .build();
+  const full = SwaggerModule.createDocument(app, config, { operationIdFactory });
+  const duplicates = findDuplicateOperationIds(full);
+  if (duplicates.length) {
+    throw new Error(
+      `Duplicate operationIds (rename a controller class or handler):\n  ${duplicates.join('\n  ')}`,
+    );
+  }
+  return splitDocument(full, SWAGGER_DOCUMENTS, API_PREFIX);
+}
+
+/**
+ * API docs. On by default outside production; in production only with
+ * SWAGGER_ENABLED=true plus SWAGGER_USER / SWAGGER_PASSWORD (basic auth), so
+ * the route list is never public by accident. When the credentials are set,
+ * basic auth also applies outside production.
  * Returns the docs path, or null when disabled.
  */
 export function setupSwagger(app: INestApplication): string | null {
   const flag = process.env.SWAGGER_ENABLED;
-  const enabled = flag === 'true' || (flag !== 'false' && process.env.NODE_ENV !== 'production');
+  const production = process.env.NODE_ENV === 'production';
+  const enabled = flag === 'true' || (flag !== 'false' && !production);
   if (!enabled) return null;
 
-  const config = new DocumentBuilder()
-    .setTitle('<%= classify(name) %> API')
-    .setDescription(
-      'Admin API (`/api/admin/*`, Bearer JWT). Tables use `POST <resource>/pagination` ' +
-        'with a PrimeNG lazy-load body and return `{ count, data }`.',
-    )
-    .setVersion('1.0')
-    .addBearerAuth()
-    .build();
-  SwaggerModule.setup('docs', app, () => SwaggerModule.createDocument(app, config));
-  return 'docs';
+  const user = process.env.SWAGGER_USER;
+  const password = process.env.SWAGGER_PASSWORD;
+  if (user && password) {
+    app.use(`/${DOCS_PATH}`, swaggerBasicAuth(user, password));
+  } else if (production) {
+    Logger.error('SWAGGER_ENABLED=true in production needs SWAGGER_USER and SWAGGER_PASSWORD; docs stay off.', 'Swagger');
+    return null;
+  }
+
+  let documents: Record<string, OpenAPIObject> | undefined;
+  const document = (name: string) => (documents ??= createSwaggerDocuments(app))[name];
+
+  for (const spec of SWAGGER_DOCUMENTS) {
+    SwaggerModule.setup(`${DOCS_PATH}/${spec.name}`, app, () => document(spec.name), {
+      customSiteTitle: spec.title,
+      jsonDocumentUrl: `${DOCS_PATH}/${spec.name}-json`,
+      yamlDocumentUrl: `${DOCS_PATH}/${spec.name}-yaml`,
+      swaggerOptions: { persistAuthorization: true },
+    });
+  }
+  // `/docs`: one UI with a document picker.
+  SwaggerModule.setup(DOCS_PATH, app, () => document(SWAGGER_DOCUMENTS[0].name), {
+    customSiteTitle: '<%= classify(name) %> API',
+    explorer: true,
+    raw: false,
+    swaggerOptions: {
+      persistAuthorization: true,
+      urls: SWAGGER_DOCUMENTS.map((spec) => ({ name: spec.name, url: `/${DOCS_PATH}/${spec.name}-json` })),
+    },
+  });
+  return DOCS_PATH;
 }
