@@ -1,0 +1,33 @@
+{
+  "$schema": "http://json-schema.org/schema",
+  "$id": "NestSchematicsSeed",
+  "title": "Seed",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Seed name (e.g. categories, demo-products). File: libs/database/src/seeds/<name>.seed.ts",
+      "$default": {
+        "$source": "argv",
+        "index": 0
+      },
+      "x-prompt": "Seed name?"
+    },
+    "devOnly": {
+      "type": "boolean",
+      "description": "Demo data: skipped when NODE_ENV=production",
+      "default": false
+    },
+    "force": {
+      "type": "boolean",
+      "description": "Overwrite the seed file if it differs from the template",
+      "default": false
+    },
+    "skipInstall": {
+      "type": "boolean",
+      "description": "Do not run npm install (nothing to install for this generator)",
+      "default": false
+    }
+  },
+  "required": ["name"]
+}

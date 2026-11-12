@@ -1,11 +1,16 @@
 import { ConfigService } from '@nestjs/config';
 import { TypeOrmModuleOptions } from '@nestjs/typeorm';
+import { migrations } from './migrations';
 import { SnakeNamingStrategy } from './snake-naming.strategy';
+
+const isTrue = (value: string | undefined) => ['true', '1'].includes((value ?? '').trim());
 
 /**
  * Entities are picked up from each module's `TypeOrmModule.forFeature`
  * (autoLoadEntities), so every app only loads the entities it uses.
- * Migrations run through the TypeORM CLI (data-source.ts), not on boot.
+ * The schema is managed by migrations (`migrations/index.ts`); they run on boot
+ * unless DB_MIGRATIONS_RUN=false (see database.module.ts). DB_SYNCHRONIZE is
+ * for throwaway local databases only and is refused in production.
  * Properties stay camelCase in code/JSON; columns are snake_case in the DB.
  */
 export function createTypeOrmOptions(config: ConfigService): TypeOrmModuleOptions {
@@ -18,7 +23,14 @@ export function createTypeOrmOptions(config: ConfigService): TypeOrmModuleOption
     database: config.get<string>('DB_DATABASE'),
     autoLoadEntities: true,
     namingStrategy: new SnakeNamingStrategy(),
-    synchronize: config.get<string>('DB_SYNCHRONIZE') === 'true',
-    logging: config.get<string>('DB_LOGGING') === 'true',
+    migrations,
+    synchronize: isTrue(config.get<string>('DB_SYNCHRONIZE')),
+    logging: isTrue(config.get<string>('DB_LOGGING')),
   };
+}
+
+/** DB_MIGRATIONS_RUN, default true. */
+export function shouldRunMigrations(config: ConfigService): boolean {
+  const value = config.get<string>('DB_MIGRATIONS_RUN');
+  return value === undefined || value.trim() === '' || isTrue(value);
 }

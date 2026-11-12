@@ -1,0 +1,18 @@
+import { DataSource } from 'typeorm';
+import { Seeder } from './seeder';
+
+/**
+ * `npm run seed -- <%= dasherize(name) %>`. Must be idempotent: look up before
+ * inserting, so running it again changes nothing.
+ */
+export const <%= camelize(name) %>Seeder: Seeder = {
+  name: '<%= dasherize(name) %>',<% if (devOnly) { %>
+  devOnly: true,<% } %>
+  async run(dataSource: DataSource) {
+    // Example:
+    // const repo = dataSource.getRepository(Category);
+    // if (!(await repo.existsBy({ name: 'Default' }))) {
+    //   await repo.save(repo.create({ name: 'Default' }));
+    // }
+  },
+};

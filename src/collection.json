@@ -12,6 +12,11 @@
       "factory": "./nest-crud/index#nestCrud",
       "schema": "./nest-crud/schema.json",
       "aliases": ["crud", "resource"]
+    },
+    "seed": {
+      "description": "Add a seed file in libs/database/src/seeds and register it (npm run seed -- <name>)",
+      "factory": "./add-ons/seed/index#seed",
+      "schema": "./add-ons/seed/schema.json"
     }
   }
 }
