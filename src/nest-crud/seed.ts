@@ -13,7 +13,7 @@ export const SEEDS_DIR = 'libs/database/src/seeds';
 export const MAX_SEED_ROWS = 1000;
 
 export function seedExportName(name: string): string {
-  return `${strings.camelize(name)}Seed`;
+  return `${strings.camelize(name)}Seeder`;
 }
 
 /** Stable UUID (v5 layout) for row `i` of `resource`. */

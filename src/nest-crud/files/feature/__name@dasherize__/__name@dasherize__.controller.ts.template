@@ -1,5 +1,5 @@
 import { Body, HttpCode, HttpStatus, Post } from '@nestjs/common';
-import { AdminAccess, BaseCrudController } from '@app/common';
+import { AdminAccess, ApiPaginatedResponse, BaseCrudController } from '@app/common';
 import { <%= classify(name) %> } from '@app/database';
 import { AdminResource } from '<%= authPath %>';
 import { Create<%= classify(name) %>Dto } from './dto/create-<%= dasherize(name) %>.dto';
@@ -25,6 +25,7 @@ export class <%= classify(name) %>Controller extends BaseCrudController({
   @AdminAccess('read')
   @HttpCode(HttpStatus.OK)
   @Post('pagination')
+  @ApiPaginatedResponse(<%= classify(name) %>)
   override findAllPagination(@Body() query: Query<%= classify(name) %>Dto) {
     return super.findAllPagination(query);
   }
@@ -32,6 +33,7 @@ export class <%= classify(name) %>Controller extends BaseCrudController({
   @AdminAccess('read')
   @HttpCode(HttpStatus.OK)
   @Post('pagination/archive')
+  @ApiPaginatedResponse(<%= classify(name) %>)
   override findAllPaginationArchive(@Body() query: Query<%= classify(name) %>Dto) {
     return super.findAllPaginationArchive(query);
   }

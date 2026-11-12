@@ -1,7 +1,8 @@
 import { Body, Delete, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Post, Put, Query, Type } from '@nestjs/common';
-import { ApiBody, ApiExtraModels, ApiOkResponse, ApiOperation, getSchemaPath } from '@nestjs/swagger';
+import { ApiBody, ApiExtraModels, ApiOkResponse, ApiOperation } from '@nestjs/swagger';
 import { AdminAccess } from '../decorators/admin-access.decorator';
 import { DeleteResultDto, OptionDto, OptionsQueryDto, TableQueryDto } from '../dto/table-query.dto';
+import { ApiPaginatedResponse } from '../swagger/paginated';
 import { validateDto } from '../validation/validate-dto';
 import { BaseCrudService } from './base-crud.service';
 import { BaseEntity } from '@app/database';
@@ -52,7 +53,7 @@ export function BaseCrudController<M extends BaseEntity, C extends object, U ext
     @HttpCode(HttpStatus.OK)
     @Post('pagination')
     @ApiOperation({ summary: 'Paged rows (PrimeNG lazy table)' })
-    @ApiOkResponse({ schema: paginatedSchema(entity) })
+    @ApiPaginatedResponse(entity)
     findAllPagination(@Body() query: TableQueryDto) {
       return this.service.findAllPagination(query, true);
     }
@@ -61,7 +62,7 @@ export function BaseCrudController<M extends BaseEntity, C extends object, U ext
     @HttpCode(HttpStatus.OK)
     @Post('pagination/archive')
     @ApiOperation({ summary: 'Paged soft-deleted rows' })
-    @ApiOkResponse({ schema: paginatedSchema(entity) })
+    @ApiPaginatedResponse(entity)
     findAllPaginationArchive(@Body() query: TableQueryDto) {
       return this.service.findAllPagination(query, false);
     }
@@ -126,14 +127,4 @@ export function BaseCrudController<M extends BaseEntity, C extends object, U ext
   }
 
   return CrudController;
-}
-
-function paginatedSchema(entity: Type<unknown>) {
-  return {
-    type: 'object',
-    properties: {
-      count: { type: 'number', example: 1 },
-      data: { type: 'array', items: { $ref: getSchemaPath(entity) } },
-    },
-  };
 }

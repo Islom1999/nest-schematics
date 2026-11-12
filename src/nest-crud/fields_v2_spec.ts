@@ -197,7 +197,10 @@ describe('nest-crud --fields v2 (starter project)', () => {
       expect(controller).toContain('QueryProductDto');
       expect(controller).toContain("@AdminResource('product', {");
       expect(controller).toContain(
-        "@Post('pagination')\n  override findAllPagination(@Body() query: QueryProductDto)",
+        "@Post('pagination')\n  @ApiPaginatedResponse(Product)\n  override findAllPagination(@Body() query: QueryProductDto)",
+      );
+      expect(controller).toContain(
+        "@Post('pagination/archive')\n  @ApiPaginatedResponse(Product)\n  override findAllPaginationArchive(",
       );
     });
   });
@@ -285,7 +288,7 @@ describe('nest-crud --fields v2 (starter project)', () => {
 
     it('writes a dev-only seed with N deterministic rows and registers it', () => {
       const seed = tree.readContent(`${SEEDS}/product.seed.ts`);
-      expect(seed).toContain('export const productSeed: Seeder = {');
+      expect(seed).toContain('export const productSeeder: Seeder = {');
       expect(seed).toContain('devOnly: true,');
       expect((seed.match(/\{ id: '/g) ?? []).length).toBe(10);
       expect(seed).toContain(`id: '${seedId('product', 1)}'`);
@@ -299,8 +302,8 @@ describe('nest-crud --fields v2 (starter project)', () => {
       expect(category).toContain("slug: 'category-1'");
       expect(tree.exists(`${SEEDS}/tag.seed.ts`)).toBeFalse();
       const index = tree.readContent(`${SEEDS}/index.ts`);
-      expect(index).toContain("import { categorySeed } from './category.seed';");
-      expect(index).toContain('  categorySeed,\n  productSeed,\n');
+      expect(index).toContain("import { categorySeeder } from './category.seed';");
+      expect(index).toContain('  categorySeeder,\n  productSeeder,\n');
     });
 
     it('seed ids are valid, stable UUIDs', () => {

@@ -222,7 +222,7 @@ export function nestCrud(options: Schema): Rule {
 
     const changeHint =
       `Changing the fields of an existing table is not generated: edit the entity, then run\n` +
-      `  npm run migration:generate --name=<change>`;
+      `  npm run migration:generate -- <change>`;
 
     const migration: Rule = (host: Tree) => {
       if (options.migration === false) return host;
