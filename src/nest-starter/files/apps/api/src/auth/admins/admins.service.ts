@@ -48,7 +48,7 @@ export class AdminsService extends BaseCrudService<Admin, CreateAdminDto, Update
       await this.assertCanAssignRole(dto.roleId, actor);
     }
     const result = await this.update(id, dto);
-    this.auth.invalidateAdmin(id);
+    await this.auth.invalidateAdmin(id);
     return result;
   }
 
@@ -57,7 +57,7 @@ export class AdminsService extends BaseCrudService<Admin, CreateAdminDto, Update
     this.assertNotSelf(target, actor, 'delete your own account');
     const result = await this.delete(id);
     await this.sessions.revokeAll(id, 'deleted');
-    this.auth.invalidateAdmin(id);
+    await this.auth.invalidateAdmin(id);
     return result;
   }
 
@@ -66,7 +66,7 @@ export class AdminsService extends BaseCrudService<Admin, CreateAdminDto, Update
     this.assertNotSelf(target, actor, 'block your own account');
     await this.repository.update(id, { isBlocked });
     if (isBlocked) await this.sessions.revokeAll(id, 'blocked');
-    this.auth.invalidateAdmin(id);
+    await this.auth.invalidateAdmin(id);
     return this.findOne(id);
   }
 
@@ -75,7 +75,7 @@ export class AdminsService extends BaseCrudService<Admin, CreateAdminDto, Update
     this.assertNotSelf(target, actor, 'change your own role');
     await this.assertCanAssignRole(roleId, actor);
     await this.repository.update(id, { roleId });
-    this.auth.invalidateAdmin(id);
+    await this.auth.invalidateAdmin(id);
     return this.findOne(id);
   }
 

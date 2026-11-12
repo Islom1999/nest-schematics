@@ -20,15 +20,17 @@ export class HealthController {
     private readonly health: HealthCheckService,
     private readonly db: TypeOrmHealthIndicator,
     private readonly memory: MemoryHealthIndicator,
+    // @ns:health-inject
   ) {}
 
-  /** Everything: database and memory. */
+  /** Everything: database, memory and the services add-ons register. */
   @Get()
   @HealthCheck()
   check() {
     return this.health.check([
       () => this.db.pingCheck('database', { timeout: 3000 }),
       () => this.memory.checkHeap('memory_heap', HEAP_LIMIT_BYTES),
+      // @ns:health-check
     ]);
   }
 
@@ -39,10 +41,13 @@ export class HealthController {
     return this.health.check([]);
   }
 
-  /** Readiness: can serve traffic (database reachable). */
+  /** Readiness: can serve traffic (database and the services add-ons register, e.g. Redis). */
   @Get('ready')
   @HealthCheck()
   ready() {
-    return this.health.check([() => this.db.pingCheck('database', { timeout: 3000 })]);
+    return this.health.check([
+      () => this.db.pingCheck('database', { timeout: 3000 }),
+      // @ns:health-ready
+    ]);
   }
 }

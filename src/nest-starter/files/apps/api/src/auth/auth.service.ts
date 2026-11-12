@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ForbiddenException,
+  Inject,
   Injectable,
   NotFoundException,
   UnauthorizedException,
@@ -8,11 +9,12 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import {
+  CACHE_STORE,
+  CacheStore,
   DeviceInfo,
   hashPassword,
   LoginAttemptLimiter,
   TokenPair,
-  TtlCache,
   verifyPassword,
 } from '@app/common';
 import { Admin, AdminSession, normalizeEmail } from '@app/database';
@@ -22,26 +24,33 @@ import { AuthResponseDto, SessionDto } from './dto/auth-response.dto';
 
 /** How long the guard trusts a checked session before reading it again. */
 const SESSION_CACHE_MS = 30_000;
+/** Session cache keys: `admin-session:<adminId>:<sessionId>`. */
+const CACHE_PREFIX = 'admin-session:';
 
 /**
  * Admin sign-in, token refresh, current-session operations and the guard's
  * session check.
  *
- * Brute force: failed sign-ins are counted per email + IP in memory; after 5
- * failures in 15 minutes that pair gets 429 until the window ends (also for
- * the right password). `change-password` is limited the same way per admin.
+ * Brute force: failed sign-ins are counted per email + IP; after 5 failures
+ * in 15 minutes that pair gets 429 until the window ends (also for the right
+ * password). `change-password` is limited the same way per admin.
  * Route-level rate limiting can be added on top of this.
+ *
+ * The session cache and the attempt counters use `CACHE_STORE`: in memory by
+ * default, in Redis once the redis add-on is installed (then a revoke or a
+ * lock is seen by every instance at once).
  */
 @Injectable()
 export class AuthService {
-  private readonly cache = new TtlCache<string, AdminPrincipal>(SESSION_CACHE_MS);
-  private readonly signInAttempts = new LoginAttemptLimiter(5, 15 * 60_000);
+  private readonly signInAttempts: LoginAttemptLimiter;
 
   constructor(
     @InjectRepository(Admin) private readonly admins: Repository<Admin>,
     private readonly sessions: AdminSessionsService,
+    @Inject(CACHE_STORE) private readonly cache: CacheStore,
   ) {
-    sessions.onRevoke((ids) => ids.forEach((id) => this.cache.delete(id)));
+    this.signInAttempts = new LoginAttemptLimiter(5, 15 * 60_000, cache.shared ? cache : undefined, 'admin-sign-in');
+    sessions.onRevoke((_ids, revoked) => cache.delete(...revoked.map((s) => cacheKey(s.ownerId, s.id))));
   }
 
   // ── sign-in / tokens ─────────────────────────────────────────────────
@@ -49,7 +58,7 @@ export class AuthService {
   async signIn(email: string, password: string, device: DeviceInfo): Promise<AuthResponseDto> {
     const normalized = normalizeEmail(email);
     const key = `${normalized}|${device.ip}`;
-    this.signInAttempts.assertAllowed(key);
+    await this.signInAttempts.assertAllowed(key);
 
     const admin = await this.admins
       .createQueryBuilder('admin')
@@ -59,10 +68,10 @@ export class AuthService {
       .getOne();
     const valid = await verifyPassword(admin?.passwordHash, password);
     if (!admin || !valid) {
-      this.signInAttempts.fail(key);
+      await this.signInAttempts.fail(key);
       throw new UnauthorizedException('Invalid email or password');
     }
-    this.signInAttempts.reset(key);
+    await this.signInAttempts.reset(key);
     if (admin.isBlocked) throw new ForbiddenException('This account is blocked');
 
     const { tokens } = await this.sessions.create(admin.id, device);
@@ -93,11 +102,8 @@ export class AuthService {
    */
   async authenticate(accessToken: string): Promise<AdminPrincipal> {
     const payload = await this.sessions.verifyAccess(accessToken);
-    const cached = this.cache.get(payload.sid);
-    if (cached) {
-      if (cached.id !== payload.sub) throw new UnauthorizedException('Invalid token');
-      return cached;
-    }
+    const cached = await this.cache.get<AdminPrincipal>(cacheKey(payload.sub, payload.sid));
+    if (cached) return cached;
 
     const session = await this.sessions.findActive(payload.sid);
     if (!session || session.adminId !== payload.sub) {
@@ -105,7 +111,8 @@ export class AuthService {
     }
     const admin = await this.activeAdmin(session);
     const principal: AdminPrincipal = { ...this.toAuthAdmin(admin), sessionId: session.id };
-    this.cache.set(session.id, principal, Math.min(SESSION_CACHE_MS, session.expiresAt.getTime() - Date.now()));
+    const ttl = Math.min(SESSION_CACHE_MS, session.expiresAt.getTime() - Date.now());
+    await this.cache.set(cacheKey(session.adminId, session.id), principal, ttl);
     await this.sessions.touch(session.id);
     return principal;
   }
@@ -142,17 +149,17 @@ export class AuthService {
   /** Checks the current password, sets the new one and signs out every other device. */
   async changePassword(principal: AdminPrincipal, currentPassword: string, newPassword: string): Promise<void> {
     const key = `change-password|${principal.id}`;
-    this.signInAttempts.assertAllowed(key);
+    await this.signInAttempts.assertAllowed(key);
     const admin = await this.admins
       .createQueryBuilder('admin')
       .addSelect('admin.passwordHash')
       .where('admin.id = :id', { id: principal.id })
       .getOne();
     if (!admin || !(await verifyPassword(admin.passwordHash, currentPassword))) {
-      this.signInAttempts.fail(key);
+      await this.signInAttempts.fail(key);
       throw new BadRequestException('Current password is incorrect');
     }
-    this.signInAttempts.reset(key);
+    await this.signInAttempts.reset(key);
     if (currentPassword === newPassword) {
       throw new BadRequestException('The new password must differ from the current one');
     }
@@ -163,13 +170,13 @@ export class AuthService {
   // ── cache control (admin management) ─────────────────────────────────
 
   /** Drops cached sessions of one admin (profile, role or block changed). */
-  invalidateAdmin(adminId: string): void {
-    this.cache.deleteWhere((p) => p.id === adminId);
+  invalidateAdmin(adminId: string): Promise<void> {
+    return this.cache.deleteByPrefix(cacheKey(adminId, ''));
   }
 
   /** Drops every cached session (a role's permissions changed). */
-  invalidateAll(): void {
-    this.cache.clear();
+  invalidateAll(): Promise<void> {
+    return this.cache.deleteByPrefix(CACHE_PREFIX);
   }
 
   // ── helpers ──────────────────────────────────────────────────────────
@@ -198,6 +205,10 @@ export class AuthService {
   private response(admin: Admin, tokens: TokenPair): AuthResponseDto {
     return { ...this.tokens(tokens), user: this.toAuthAdmin(admin) };
   }
+}
+
+function cacheKey(adminId: string, sessionId: string): string {
+  return `${CACHE_PREFIX}${adminId}:${sessionId}`;
 }
 
 export function toSessionDto(session: AdminSession, isCurrent: boolean): SessionDto {

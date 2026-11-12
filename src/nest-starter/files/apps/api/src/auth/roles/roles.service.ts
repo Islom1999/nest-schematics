@@ -42,7 +42,7 @@ export class RolesService extends BaseCrudService<AdminRole, CreateRoleDto, Upda
     if (dto.permissions) this.assertCanGrant(dto.permissions, actor);
     if (dto.name && dto.name !== role.name) await this.assertNameFree(dto.name, id);
     const result = await this.update(id, dto);
-    this.auth.invalidateAll();
+    await this.auth.invalidateAll();
     return result;
   }
 
@@ -52,7 +52,7 @@ export class RolesService extends BaseCrudService<AdminRole, CreateRoleDto, Upda
     const used = await this.admins.count({ where: { roleId: id } });
     if (used) throw new ConflictException(`The role is assigned to ${used} admin(s); reassign them first`);
     const result = await this.delete(id);
-    this.auth.invalidateAll();
+    await this.auth.invalidateAll();
     return result;
   }
 
