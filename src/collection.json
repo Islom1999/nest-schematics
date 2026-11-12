@@ -64,7 +64,7 @@
       "schema": "./add-ons/auth-client/schema.json"
     },
     "payment": {
-      "description": "Add payments: payment <payme|click> [--mode wallet|order|both]; invoices, a strict state machine with idempotent webhooks, client checkout, admin/payments, wallets with a locked ledger (needs auth-client)",
+      "description": "Add payments: payment <payme|click|uzum|paynet|inpay> [--mode wallet|order|both]; invoices, a strict state machine with idempotent webhooks, client checkout, admin/payments, wallets with a locked ledger (needs auth-client)",
       "factory": "./add-ons/payment/index#payment",
       "schema": "./add-ons/payment/schema.json"
     },

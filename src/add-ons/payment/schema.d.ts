@@ -1,6 +1,6 @@
 export interface Schema {
-  /** Payment provider to add (positional): `payme` or `click`. */
-  provider?: 'payme' | 'click';
+  /** Payment provider to add (positional): `payme`, `click`, `uzum`, `paynet` or `inpay`. */
+  provider?: 'payme' | 'click' | 'uzum' | 'paynet' | 'inpay';
   /**
    * `wallet` (default on the first run): balances topped up by payments;
    * `order`: pay your own PaymentTarget; `both`. Modes add up across runs.

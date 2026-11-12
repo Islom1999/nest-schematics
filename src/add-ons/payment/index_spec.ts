@@ -28,7 +28,7 @@ describe('payment add-on', () => {
   });
 
   it('needs a provider', async () => {
-    await expectAsync(runner.runSchematic('payment', { skipInstall: true }, copy(withClients))).toBeRejectedWithError(/payme\|click/);
+    await expectAsync(runner.runSchematic('payment', { skipInstall: true }, copy(withClients))).toBeRejectedWithError(/payme\|click\|uzum\|paynet\|inpay/);
   });
 
   describe('payme (default wallet mode)', () => {
@@ -128,6 +128,90 @@ describe('payment add-on', () => {
 
       const again = await runner.runSchematic('payment', { provider: 'payme', skipInstall: true }, copy(both));
       expect(snapshot(again)).toEqual(snapshot(both));
+    });
+  });
+
+  describe('uzum, paynet and inpay', () => {
+    const PROVIDERS = [
+      {
+        name: 'uzum',
+        controller: 'UzumController',
+        service: 'UzumService',
+        enumMember: "UZUM = 'uzum',",
+        route: "@Controller('payments/uzum')",
+        env: ['UZUM_SERVICE_ID=', 'UZUM_LOGIN=', 'UZUM_PASSWORD=', 'UZUM_ACCOUNT_FIELD=account', 'UZUM_PAY_URL=', 'UZUM_ALLOWED_IPS='],
+      },
+      {
+        name: 'paynet',
+        controller: 'PaynetController',
+        service: 'PaynetService',
+        enumMember: "PAYNET = 'paynet',",
+        route: "@Controller('payments/paynet')",
+        env: ['PAYNET_LOGIN=', 'PAYNET_PASSWORD=', 'PAYNET_SERVICE_ID=', 'PAYNET_ACCOUNT_FIELD=account', 'PAYNET_PAY_URL=', 'PAYNET_ALLOWED_IPS='],
+      },
+      {
+        name: 'inpay',
+        controller: 'InpayController',
+        service: 'InpayService',
+        enumMember: "INPAY = 'inpay',",
+        route: "@Controller('payments/inpay')",
+        env: ['INPAY_MERCHANT_ID=', 'INPAY_MERCHANT_TOKEN=', 'INPAY_API_URL=', 'INPAY_CALLBACK_URL=', 'INPAY_PAYMENT_METHOD=', 'INPAY_ALLOWED_IPS='],
+      },
+    ];
+
+    for (const p of PROVIDERS) {
+      it(`${p.name}: installs the webhook, the enum member, env keys and changes nothing on a re-run`, async () => {
+        const tree = await runner.runSchematic('payment', { provider: p.name, skipInstall: true }, copy(withClients));
+        for (const f of ['service', 'controller', 'service.spec']) {
+          expect(tree.exists(`${API}/${p.name}/${p.name}.${f}.ts`)).withContext(f).toBeTrue();
+        }
+        expect(tree.readContent(`${ENTITIES}/payment.types.ts`)).toContain(`${p.enumMember}\n  // @ns:payment-providers`);
+        const module = tree.readContent(`${API}/payments.module.ts`);
+        expect(module).toContain(`import { ${p.controller} } from './${p.name}/${p.name}.controller';`);
+        expect(module).toMatch(new RegExp(`controllers: \\[[^\\]]*${p.controller}`));
+        expect(module).toMatch(new RegExp(`providers: \\[[^\\]]*${p.service}`));
+
+        const controller = tree.readContent(`${API}/${p.name}/${p.name}.controller.ts`);
+        for (const d of ['@Public()', '@SkipThrottle()', '@ApiExcludeController()', '// @ns:payment-log', p.route]) {
+          expect(controller).withContext(d).toContain(d);
+        }
+        const env = tree.readContent('/.env.example');
+        for (const key of p.env) expect(env).withContext(key).toContain(key);
+        expect(env).not.toContain('PAYME_');
+        expect(tree.readContent('/libs/common/src/config/env.validation.ts')).toContain(`${p.env[0].replace('=', '')}?:`);
+        expect(JSON.parse(tree.readContent('/nest-schematics.json')).features.payment.items).toEqual([p.name]);
+
+        const again = await runner.runSchematic('payment', { provider: p.name, skipInstall: true }, copy(tree));
+        expect(snapshot(again)).toEqual(snapshot(tree));
+      });
+    }
+
+    it('all five providers share one core; api-logs logs every webhook once', async () => {
+      let tree = copy(withClients);
+      for (const name of ['payme', 'click', 'uzum', 'paynet', 'inpay']) {
+        tree = await runner.runSchematic('payment', { provider: name, skipInstall: true }, tree);
+      }
+      expect(migrationFiles(tree, 'payments').length).toBe(1);
+      expect(tree.readContent(`${ENTITIES}/payment.types.ts`)).toContain(
+        "PAYME = 'payme',\n  CLICK = 'click',\n  UZUM = 'uzum',\n  PAYNET = 'paynet',\n  INPAY = 'inpay',\n  // @ns:payment-providers",
+      );
+      expect(JSON.parse(tree.readContent('/nest-schematics.json')).features.payment.items).toEqual(['click', 'inpay', 'payme', 'paynet', 'uzum']);
+
+      const logged = await runner.runSchematic('api-logs', { skipInstall: true }, tree);
+      for (const name of ['uzum', 'paynet', 'inpay']) {
+        const controller = logged.readContent(`${API}/${name}/${name}.controller.ts`);
+        expect(controller).withContext(name).toContain(`@LogPayment({ module: '${name}' })\n// @ns:payment-log`);
+        expect(controller.match(/@LogPayment\(/g)?.length).toBe(1);
+      }
+      const again = await runner.runSchematic('payment', { provider: 'inpay', skipInstall: true }, copy(logged));
+      expect(snapshot(again)).toEqual(snapshot(logged));
+    });
+
+    it('checkout awaits async pay URLs (inPAY creates the order first)', async () => {
+      const tree = await runner.runSchematic('payment', { provider: 'inpay', skipInstall: true }, copy(withClients));
+      expect(tree.readContent(`${API}/invoices.service.ts`)).toContain('payUrl: await adapter.payUrl(invoice),');
+      expect(tree.readContent(`${API}/payment-provider.ts`)).toContain('payUrl(invoice: PaymentInvoice): string | Promise<string>;');
+      expect(tree.readContent(`${API}/inpay/inpay.service.ts`)).toContain('await this.fetchState(orderId)');
     });
   });
 

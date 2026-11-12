@@ -36,7 +36,7 @@ import { hasApiLogs } from '../api-logs/cleanup';
 import { PAYMENT_WEBHOOK_CONTROLLERS, registerPaymentLogging } from './log';
 import { Schema } from './schema';
 
-export const PAYMENT_PROVIDERS = ['payme', 'click'] as const;
+export const PAYMENT_PROVIDERS = ['payme', 'click', 'uzum', 'paynet', 'inpay'] as const;
 export type PaymentProviderName = (typeof PAYMENT_PROVIDERS)[number];
 export type PaymentMode = 'wallet' | 'order' | 'both';
 
@@ -116,15 +116,73 @@ const PROVIDER_ENV: Record<PaymentProviderName, { title: string; vars: EnvVar[] 
       { key: 'CLICK_ALLOWED_IPS', value: '', comment: 'Optional comma-separated IPs / IPv4 CIDRs Click calls from (empty = any; behind a proxy set TRUST_PROXY)' },
     ],
   },
+  uzum: {
+    title: 'Uzum Bank (payments)',
+    vars: [
+      {
+        key: 'UZUM_SERVICE_ID',
+        value: '',
+        comment: 'Uzum merchant service id. Empty = Uzum is off: checkout answers 503, webhooks answer 10001',
+      },
+      { key: 'UZUM_LOGIN', value: '', comment: 'Uzum calls POST /api/payments/uzum/<check|create|confirm|reverse|status> with Basic <login>:<password>' },
+      { key: 'UZUM_PASSWORD', value: '' },
+      { key: 'UZUM_ACCOUNT_FIELD', value: 'account', comment: 'Name of the account parameter set for the service (params.<field>)' },
+      { key: 'UZUM_PAY_URL', value: '', comment: 'Optional pay link template with {account}, {amount} (tiyin), {sum}; empty = pay by invoice number in the Uzum app' },
+      { key: 'UZUM_ALLOWED_IPS', value: '', comment: 'Optional comma-separated IPs / IPv4 CIDRs Uzum calls from (empty = any; behind a proxy set TRUST_PROXY)' },
+    ],
+  },
+  paynet: {
+    title: 'Paynet (payments)',
+    vars: [
+      {
+        key: 'PAYNET_LOGIN',
+        value: '',
+        comment: 'Paynet calls POST /api/payments/paynet with Basic <login>:<password>. Empty = Paynet is off: checkout answers 503, calls answer 601',
+      },
+      { key: 'PAYNET_PASSWORD', value: '' },
+      { key: 'PAYNET_SERVICE_ID', value: '', comment: 'Optional: when set, params.serviceId must match' },
+      { key: 'PAYNET_ACCOUNT_FIELD', value: 'account', comment: 'Name of the account field set for the service (params.fields.<field>)' },
+      { key: 'PAYNET_PAY_URL', value: '', comment: 'Optional pay link template with {account}, {amount} (tiyin), {sum}; empty = pay by invoice number in the Paynet app' },
+      { key: 'PAYNET_ALLOWED_IPS', value: '', comment: 'Optional comma-separated IPs / IPv4 CIDRs Paynet calls from (empty = any; behind a proxy set TRUST_PROXY)' },
+    ],
+  },
+  inpay: {
+    title: 'inPAY (payments)',
+    vars: [
+      {
+        key: 'INPAY_MERCHANT_ID',
+        value: '',
+        comment: 'inPAY cabinet values. Empty = inPAY is off: checkout and the webhook answer 503',
+      },
+      { key: 'INPAY_MERCHANT_TOKEN', value: '', comment: 'Exchanged for a 24 h bearer token (cached in CACHE_STORE)' },
+      { key: 'INPAY_API_URL', value: '', comment: 'Default https://inpay.uz/api/v1' },
+      { key: 'INPAY_CALLBACK_URL', value: '', comment: 'Optional: https://<host>/api/payments/inpay/webhook, sent with every order' },
+      { key: 'INPAY_PAYMENT_METHOD', value: '', comment: 'Optional payment_method (click, payme, ...); empty = the client picks on the inPAY page' },
+      { key: 'INPAY_DESCRIPTION', value: 'Payment', comment: 'Order description shown by inPAY (the invoice number is appended)' },
+      { key: 'INPAY_ALLOWED_IPS', value: '', comment: 'Optional comma-separated IPs / IPv4 CIDRs inPAY calls from (empty = any; behind a proxy set TRUST_PROXY)' },
+    ],
+  },
 };
 
 const PROVIDER_CLASSES: Record<PaymentProviderName, { controller: string; service: string; enumMember: string }> = {
   payme: { controller: 'PaymeController', service: 'PaymeService', enumMember: "PAYME = 'payme'," },
   click: { controller: 'ClickController', service: 'ClickService', enumMember: "CLICK = 'click'," },
+  uzum: { controller: 'UzumController', service: 'UzumService', enumMember: "UZUM = 'uzum'," },
+  paynet: { controller: 'PaynetController', service: 'PaynetService', enumMember: "PAYNET = 'paynet'," },
+  inpay: { controller: 'InpayController', service: 'InpayService', enumMember: "INPAY = 'inpay'," },
+};
+
+/** Webhook routes, for the hint after a run. */
+const PROVIDER_WEBHOOKS: Record<PaymentProviderName, string> = {
+  payme: 'POST /api/payments/payme',
+  click: 'POST /api/payments/click/prepare and /complete',
+  uzum: 'POST /api/payments/uzum/check, /create, /confirm, /reverse and /status',
+  paynet: 'POST /api/payments/paynet',
+  inpay: 'POST /api/payments/inpay/webhook',
 };
 
 /**
- * `npm run g -- payment payme|click [--mode wallet|order|both]` (needs
+ * `npm run g -- payment payme|click|uzum|paynet|inpay [--mode wallet|order|both]` (needs
  * auth-client). The first run installs the core (payment_invoices,
  * payment_transactions, the state machine, `client/payments/checkout`,
  * `admin/payments`, PaymentTargetRegistry); every run adds a provider
@@ -243,7 +301,7 @@ export function payment(options: Schema): Rule {
         const installed = [...new Set([...installedPaymentProviders(_host, root), provider])].sort().join(', ');
         ctx.logger.info(
           `Payments (${installed}, mode ${mode}): run "npm run migration:run", fill the ${provider.toUpperCase()}_* keys in .env. ` +
-            `Webhook: ${provider === 'payme' ? 'POST /api/payments/payme' : 'POST /api/payments/click/prepare and /complete'}. ` +
+            `Webhook: ${PROVIDER_WEBHOOKS[provider]}. ` +
             'Checkout: POST /api/client/payments/checkout.' +
             (wallet ? ' Wallet: WalletService (credit/debit/balance) from apps/api/src/payments.' : '') +
             (mode !== 'wallet' ? ' Orders: implement PaymentTarget and register it (example in payments/payment-target.ts).' : ''),

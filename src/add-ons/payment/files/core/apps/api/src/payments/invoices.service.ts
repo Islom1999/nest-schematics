@@ -85,7 +85,7 @@ export class InvoicesService {
       amount: invoice.amount,
       status: invoice.status,
       expiresAt: invoice.expiresAt,
-      payUrl: adapter.payUrl(invoice),
+      payUrl: await adapter.payUrl(invoice),
     };
   }
 }
