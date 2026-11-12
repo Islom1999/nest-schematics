@@ -1,0 +1,32 @@
+{
+  "$schema": "http://json-schema.org/schema",
+  "$id": "UploadAddonSchema",
+  "title": "File uploads (media_files)",
+  "type": "object",
+  "properties": {
+    "storage": {
+      "type": "string",
+      "enum": ["local", "s3"],
+      "description": "Storage driver to add: local (UPLOAD_DIR) or s3 (S3 / MinIO, adds a minio service to docker-compose). Default: the one installed before, else local"
+    },
+    "thumbnails": {
+      "type": "boolean",
+      "description": "Generate a small webp thumbnail next to every image with sharp (and fill width/height)"
+    },
+    "force": {
+      "type": "boolean",
+      "description": "Overwrite generated files that you have edited",
+      "default": false
+    },
+    "skipInstall": {
+      "type": "boolean",
+      "description": "Do not run npm install",
+      "default": false
+    },
+    "root": {
+      "type": "string",
+      "description": "Project directory relative to the current directory (used by `new --apps`)",
+      "default": ""
+    }
+  }
+}

@@ -8,6 +8,7 @@ import {
   scheduleInstall,
 } from '../../utils/ops';
 import { hasApiLogs, registerApiLogCleanup } from '../api-logs/cleanup';
+import { hasUpload, registerMediaCleanup } from '../upload/cleanup';
 import { Schema } from './schema';
 
 /**
@@ -22,6 +23,7 @@ interface DeferredJob {
 
 const DEFERRED_JOBS: DeferredJob[] = [
   { installed: hasApiLogs, register: registerApiLogCleanup },
+  { installed: hasUpload, register: registerMediaCleanup },
 ];
 
 /**

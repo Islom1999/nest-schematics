@@ -1,0 +1,53 @@
+import { MigrationInterface, QueryRunner } from 'typeorm';
+
+/**
+ * `ai_usage_daily` and `ai_usage_monthly` (npm run g -- ai --quota).
+ * Matches entities/ai-usage-daily.entity.ts and ai-usage-monthly.entity.ts;
+ * the unique indexes are the upsert targets.
+ */
+export class AiQuota<%= timestamp %> implements MigrationInterface {
+  name = 'AiQuota<%= timestamp %>';
+
+  public async up(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query(`
+      CREATE TABLE IF NOT EXISTS "ai_usage_daily" (
+        "id" uuid NOT NULL DEFAULT gen_random_uuid(),
+        "created_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+        "updated_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+        "deleted_at" TIMESTAMP WITH TIME ZONE,
+        "user_id" character varying(64) NOT NULL,
+        "day" date NOT NULL,
+        "messages" integer NOT NULL DEFAULT 0,
+        "tokens" integer NOT NULL DEFAULT 0,
+        CONSTRAINT "<%= pk.daily %>" PRIMARY KEY ("id")
+      )
+    `);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "<%= deletedIdx.daily %>" ON "ai_usage_daily" ("deleted_at")`);
+    await queryRunner.query(
+      `CREATE UNIQUE INDEX IF NOT EXISTS "UQ_ai_usage_daily_user_id_day" ON "ai_usage_daily" ("user_id", "day")`,
+    );
+
+    await queryRunner.query(`
+      CREATE TABLE IF NOT EXISTS "ai_usage_monthly" (
+        "id" uuid NOT NULL DEFAULT gen_random_uuid(),
+        "created_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+        "updated_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+        "deleted_at" TIMESTAMP WITH TIME ZONE,
+        "user_id" character varying(64) NOT NULL,
+        "month" date NOT NULL,
+        "messages" integer NOT NULL DEFAULT 0,
+        "tokens" integer NOT NULL DEFAULT 0,
+        CONSTRAINT "<%= pk.monthly %>" PRIMARY KEY ("id")
+      )
+    `);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "<%= deletedIdx.monthly %>" ON "ai_usage_monthly" ("deleted_at")`);
+    await queryRunner.query(
+      `CREATE UNIQUE INDEX IF NOT EXISTS "UQ_ai_usage_monthly_user_id_month" ON "ai_usage_monthly" ("user_id", "month")`,
+    );
+  }
+
+  public async down(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query(`DROP TABLE IF EXISTS "ai_usage_monthly"`);
+    await queryRunner.query(`DROP TABLE IF EXISTS "ai_usage_daily"`);
+  }
+}

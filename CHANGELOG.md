@@ -10,10 +10,17 @@
 - `scripts/e2e.sh`: paketni pack qilib loyiha yaratadi, CRUD va `scripts/e2e.d/*` bo'laklarini qo'shadi, ikkinchi ishga tushirishda hech narsa o'zgarmasligini tekshiradi, build qiladi va API'ni PostgreSQL bilan ishga tushiradi.
 - GitHub Actions: testlar (Node 20/22), e2e (Postgres servisi), `v*` tag'da npm'ga publish (`NPM_TOKEN`, provenance).
 - `docs/ADDON-GUIDE.md`: yangi bo'lak yozish qoidalari.
+- Starter mustahkamlandi: sxema faqat migratsiyalar orqali (`DB_SYNCHRONIZE=false`, ishga tushganda advisory lock bilan migratsiya), `/api/health` (`/live`, `/ready`), global rate limit (`@nestjs/throttler`, `@AuthThrottle()`), seed mexanizmi (`npm run seed`, `seed` add-on), ESLint 9 + Prettier + Jest, Dockerfile va docker-compose.
+- Admin auth: `admins`, `admin_roles`, `admin_sessions`; argon2, access + refresh token (alohida secret'lar), refresh rotatsiyasi va qayta ishlatilgan token'da sessiyani bekor qilish, qurilmalar ro'yxati va bekor qilish, sessiya limiti, `admin/admins`, `admin/roles`, `admin/permissions`, birinchi super admin `.env` dan.
+- `--fields` v2: `string(N)`, `int`, `decimal(p,s)`, `json`, `relation(T)`, `relation(T[])`, `file(kind)`; `unique`, `index`, `default(v)`, `min`/`max`, `cascade`/`set-null`, `label(field)`. CRUD o'z migratsiyasini, ruxsatlarini va `GET admin/<nom>/options` (select uchun) yo'lini yaratadi.
+- Swagger kontrakti: `/docs/admin` va `/docs/client` hujjatlari, barqaror `operationId`, nomlangan enum'lar, `Paginated<Model>` sxemasi, `x-relation`/`x-file`; `npm run swagger:export` DB'siz ishlaydi. `openapi-client` add-on (typescript-angular, dart-dio, typescript-fetch).
+- Add-on'lar: `worker`, `bot` (endi starter'dan alohida), `api-logs` (`server_api_logs`, maxfiy maydonlarni yashirish, `x-request-id`, saqlash muddati).
 
 ### Changed
 
 - `crud` endi siz o'zgartirgan fayllarni qayta yozmaydi (ogohlantiradi); `--force` bilan qayta yoziladi.
+- `--apps` sukut bo'yicha faqat `api`; `bot` va `worker` add-on sifatida qo'shiladi (`--apps api,bot,worker` ham ishlaydi).
+- Auth skeleton o'rniga to'liq admin auth (sign-in javobi endi `refreshToken` va `expiresIn` ham qaytaradi).
 
 ### Fixed
 

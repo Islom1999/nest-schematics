@@ -79,6 +79,35 @@ export function addNestApp(tree: Tree, app: string, root = ''): AddNestAppResult
   return result;
 }
 
+export interface NestAsset {
+  /** Glob relative to the app's sourceRoot, e.g. `modules/ai/chat/prompts/*.md`. */
+  include: string;
+  exclude?: string;
+  outDir?: string;
+  watchAssets?: boolean;
+}
+
+/**
+ * Adds a non-TypeScript file pattern to `projects.<app>.compilerOptions.assets`
+ * in nest-cli.json, so `nest build <app>` copies it next to the compiled app
+ * (the webpack bundle does not include `.md`, `.hbs`, ... files). Idempotent:
+ * an asset with the same `include` is left alone.
+ *
+ * @returns false when the asset was already there.
+ */
+export function addNestAssets(tree: Tree, app: string, asset: NestAsset, root = ''): boolean {
+  const cliPath = prefixed(root, 'nest-cli.json');
+  const cli = JSON.parse(readText(tree, cliPath));
+  const project = cli.projects?.[app];
+  if (!project) throw new SchematicsException(`nest-cli.json has no "${app}" project.`);
+  const options = (project.compilerOptions ??= {});
+  const assets: (string | NestAsset)[] = (options.assets ??= []);
+  if (assets.some((a) => (typeof a === 'string' ? a : a.include) === asset.include)) return false;
+  assets.push(asset);
+  writeText(tree, cliPath, `${JSON.stringify(cli, null, 2)}\n`);
+  return true;
+}
+
 /** apps/worker/src/worker.module.ts: where cron job classes are registered. */
 export const WORKER_MODULE = 'apps/worker/src/worker.module.ts';
 

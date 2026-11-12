@@ -1,0 +1,62 @@
+import { MigrationInterface, QueryRunner } from 'typeorm';
+
+/**
+ * `ai_chat_sessions` and `ai_chat_messages` (npm run g -- ai --chat).
+ * Matches entities/ai-chat-session.entity.ts and ai-chat-message.entity.ts.
+ */
+export class AiChat<%= timestamp %> implements MigrationInterface {
+  name = 'AiChat<%= timestamp %>';
+
+  public async up(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query(`
+      CREATE TABLE IF NOT EXISTS "ai_chat_sessions" (
+        "id" uuid NOT NULL DEFAULT gen_random_uuid(),
+        "created_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+        "updated_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+        "deleted_at" TIMESTAMP WITH TIME ZONE,
+        "user_id" character varying(64) NOT NULL,
+        "title" character varying(200) NOT NULL DEFAULT '',
+        "prompt" character varying(64) NOT NULL DEFAULT 'default',
+        "model" character varying(128),
+        "message_count" integer NOT NULL DEFAULT 0,
+        "last_message_at" TIMESTAMP WITH TIME ZONE,
+        CONSTRAINT "<%= pk.sessions %>" PRIMARY KEY ("id")
+      )
+    `);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "<%= deletedIdx.sessions %>" ON "ai_chat_sessions" ("deleted_at")`);
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_ai_chat_sessions_user_id_last_message_at" ON "ai_chat_sessions" ("user_id", "last_message_at")`,
+    );
+
+    await queryRunner.query(`
+      CREATE TABLE IF NOT EXISTS "ai_chat_messages" (
+        "id" uuid NOT NULL DEFAULT gen_random_uuid(),
+        "created_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+        "updated_at" TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+        "deleted_at" TIMESTAMP WITH TIME ZONE,
+        "session_id" uuid NOT NULL,
+        "role" character varying(16) NOT NULL,
+        "content" text NOT NULL DEFAULT '',
+        "status" character varying(16) NOT NULL DEFAULT 'complete',
+        "model" character varying(128),
+        "prompt_tokens" integer NOT NULL DEFAULT 0,
+        "completion_tokens" integer NOT NULL DEFAULT 0,
+        "error" text,
+        CONSTRAINT "<%= pk.messages %>" PRIMARY KEY ("id")
+      )
+    `);
+    await queryRunner.query(`CREATE INDEX IF NOT EXISTS "<%= deletedIdx.messages %>" ON "ai_chat_messages" ("deleted_at")`);
+    await queryRunner.query(
+      `CREATE INDEX IF NOT EXISTS "IDX_ai_chat_messages_session_id_created_at" ON "ai_chat_messages" ("session_id", "created_at")`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "ai_chat_messages" ADD CONSTRAINT "FK_ai_chat_messages_session_id" FOREIGN KEY ("session_id") ` +
+        `REFERENCES "ai_chat_sessions"("id") ON DELETE CASCADE ON UPDATE NO ACTION`,
+    );
+  }
+
+  public async down(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query(`DROP TABLE IF EXISTS "ai_chat_messages"`);
+    await queryRunner.query(`DROP TABLE IF EXISTS "ai_chat_sessions"`);
+  }
+}
