@@ -48,6 +48,21 @@
       "factory": "./add-ons/api-logs/index#apiLogs",
       "schema": "./add-ons/api-logs/schema.json"
     },
+    "sms": {
+      "description": "Add SmsModule / SmsService.send(phone, text) in libs/common/src/sms (eskiz | log)",
+      "factory": "./add-ons/sms/index#sms",
+      "schema": "./add-ons/sms/schema.json"
+    },
+    "mail": {
+      "description": "Add MailModule / MailService.send({ to, subject, html, text }) and templates in libs/common/src/mail (resend | smtp | log)",
+      "factory": "./add-ons/mail/index#mail",
+      "schema": "./add-ons/mail/schema.json"
+    },
+    "auth-client": {
+      "description": "Add client (app user) auth: users, sessions, UserGuard, @CurrentUser(), client/auth/* (--methods phone,email,google,apple,telegram) and admin/users",
+      "factory": "./add-ons/auth-client/index#authClient",
+      "schema": "./add-ons/auth-client/schema.json"
+    },
     "ai": {
       "description": "Add AiService (OpenRouter / Gemini over fetch: generate, stream, vision, json, image), ai_logs with tokens and cost, admin stats; --chat: client SSE chat; --quota: per-user limits",
       "factory": "./add-ons/ai/index#ai",

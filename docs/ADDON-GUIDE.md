@@ -25,6 +25,9 @@ Register it in `src/collection.json` (`"factory": "./add-ons/<name>/index#<camel
    yourself at the end with `recordFeature(tree, '<name>', options, item?)`.
 3. **Never overwrite user edits.** Merge templates with `mergeSafe(source, options.force)`,
    not `mergeWith(..., MergeStrategy.Overwrite)`. Every schema gets a `force` option.
+   Files that later runs extend at a marker (a registry, a module, an entity that gains
+   columns) go in the third argument, `mergeSafe(source, force, ['libs/.../registry.ts'])`:
+   they are created once and never compared or overwritten, not even with `force`.
 4. **Edit existing files only through `src/utils/ops`**, which are idempotent:
    - modules: `addModuleImport` (dedupes `X`, `X.forRoot()`), `addModuleProvider`,
      `addModuleController`, `addModuleExport`, `addGlobalProvider(…'APP_GUARD'…)`;

@@ -1,0 +1,33 @@
+{
+  "$schema": "http://json-schema.org/schema",
+  "$id": "MailAddonSchema",
+  "title": "Email sending (MailModule / MailService)",
+  "type": "object",
+  "properties": {
+    "provider": {
+      "type": "string",
+      "enum": ["resend", "smtp", "log"],
+      "description": "Email provider: resend (HTTP API), smtp (nodemailer) or log (development: emails go to the server log)",
+      "default": "resend",
+      "$default": {
+        "$source": "argv",
+        "index": 0
+      }
+    },
+    "force": {
+      "type": "boolean",
+      "description": "Overwrite generated files that you have edited",
+      "default": false
+    },
+    "skipInstall": {
+      "type": "boolean",
+      "description": "Do not run npm install",
+      "default": false
+    },
+    "root": {
+      "type": "string",
+      "description": "Project directory relative to the current directory",
+      "default": ""
+    }
+  }
+}

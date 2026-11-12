@@ -4,14 +4,19 @@ import { forEach, mergeWith, Rule, SchematicContext, Source, Tree, apply } from 
  * Merges generated files into the project without clobbering user edits:
  * - new files are created;
  * - identical files are left alone;
- * - changed files are kept and reported, unless `force` is set.
+ * - changed files are kept and reported, unless `force` is set;
+ * - `createOnly` files (paths from the project root, e.g. a registry file that
+ *   other generators extend at a marker) are only created, never compared or
+ *   overwritten, not even with `force`.
  */
-export function mergeSafe(source: Source, force = false): Rule {
+export function mergeSafe(source: Source, force = false, createOnly: string[] = []): Rule {
+  const createOnlySet = new Set(createOnly.map((p) => `/${p.replace(/^\/+/, '')}`));
   return (tree: Tree, context: SchematicContext) => {
     const kept: string[] = [];
     const guarded = apply(source, [
       forEach((entry) => {
         if (!tree.exists(entry.path)) return entry;
+        if (createOnlySet.has(entry.path)) return null;
         const current = tree.read(entry.path);
         if (current && current.equals(entry.content)) return null;
         if (force) {

@@ -1,0 +1,28 @@
+{
+  "$schema": "http://json-schema.org/schema",
+  "$id": "AuthClientAddonSchema",
+  "title": "Client (app user) auth: users, sessions, sign-in methods",
+  "type": "object",
+  "properties": {
+    "methods": {
+      "type": "string",
+      "description": "Comma separated sign-in methods: phone, email, google, apple, telegram. Re-run with more methods to add them.",
+      "default": "phone"
+    },
+    "force": {
+      "type": "boolean",
+      "description": "Overwrite generated files that you have edited",
+      "default": false
+    },
+    "skipInstall": {
+      "type": "boolean",
+      "description": "Do not run npm install",
+      "default": false
+    },
+    "root": {
+      "type": "string",
+      "description": "Project directory relative to the current directory",
+      "default": ""
+    }
+  }
+}

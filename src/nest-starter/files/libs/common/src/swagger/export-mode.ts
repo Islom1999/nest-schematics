@@ -31,6 +31,7 @@ export function swaggerExportEnvDefaults(): Record<string, string> {
     DB_PASSWORD: 'swagger_export',
     DB_DATABASE: 'swagger_export',
     ADMIN_JWT_SECRET: randomBytes(32).toString('hex'),
+    ADMIN_REFRESH_SECRET: randomBytes(32).toString('hex'),
   };
 }
 
