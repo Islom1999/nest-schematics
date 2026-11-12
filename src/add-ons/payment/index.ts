@@ -183,7 +183,7 @@ const PROVIDER_WEBHOOKS: Record<PaymentProviderName, string> = {
 
 /**
  * `npm run g -- payment payme|click|uzum|paynet|inpay [--mode wallet|order|both]` (needs
- * auth-client). The first run installs the core (payment_invoices,
+ * auth-client; mail/sms are needed only by the sign-in methods auth-client was installed with). The first run installs the core (payment_invoices,
  * payment_transactions, the state machine, `client/payments/checkout`,
  * `admin/payments`, PaymentTargetRegistry); every run adds a provider
  * webhook. `wallet` mode (default) adds wallets + ledger, WalletService and

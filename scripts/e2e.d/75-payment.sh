@@ -243,6 +243,16 @@ payment_smoke() {
   PM_STATUS=$(curl -s -G -o "$WORK/pm.txt" -w '%{http_code}' "$base/admin/payments/export" \
     --data-urlencode 'filters={"nope":{"value":"x"}}' -H "authorization: Bearer $admin")
   pm_expect 400 "export with an unknown filter field"
+  # Rows with the same createdAt come out in id order, whichever way createdAt is sorted.
+  pm_psql "UPDATE payment_transactions SET created_at = '$since'::timestamptz + interval '1 millisecond' WHERE created_at >= '$since'" >/dev/null
+  want=$(pm_psql "SELECT string_agg(id::text, ',' ORDER BY id) FROM payment_transactions WHERE created_at >= '$since' AND deleted_at IS NULL")
+  for sort_order in 1 -1; do
+    PM_STATUS=$(curl -s -G -o "$WORK/pm.csv" -w '%{http_code}' "$base/admin/payments/export" --data-urlencode "from=$since" \
+      --data-urlencode 'sortField=createdAt' --data-urlencode "sortOrder=$sort_order" -H "authorization: Bearer $admin")
+    pm_expect 200 "export sorted by createdAt ($sort_order)"
+    [ "$(awk -F, 'NR > 1 { printf "%s%s", sep, $2; sep = "," }' "$WORK/pm.csv")" = "$want" ] \
+      || fail "export rows with equal createdAt are not in id order ($sort_order): $(cat "$WORK/pm.csv")"
+  done
 
   # ── admin: wallet reversals (balance 0 now) ───────────────────────────
   pm_call POST admin/wallets/adjust "$(pm_obj userId "$user" amount 100000 note 'e2e credit')" "$admin"

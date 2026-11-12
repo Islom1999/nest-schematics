@@ -205,7 +205,7 @@ Add-ons are installed into a generated project: `npm run g -- <add-on> [options]
 | `upload-tus` | `npm run g -- upload-tus --engine tusd\|node` | Resumable (tus) uploads on top of `upload`: `tusd` (docker service + hooks, default) or `node` (`@tus/server` in the api); token and limit checks on create, magic-byte check and `media_files` row on finish, worker cleanup | `upload` |
 | `ai` | `npm run g -- ai [--chat] [--quota]` | `AiService` (OpenRouter / Gemini over fetch: generate, stream, vision, json, image), `ai_logs` with tokens and cost, admin stats; `--chat`: client SSE chat; `--quota`: per-user limits | `auth-client` for `--chat` |
 | `notifications` | `npm run g -- notifications [--channels telegram,email]` | `notifications` + `notification_campaigns`: `NotificationService.send()` (save, then FCM push in chunks of 500), `client/notifications`, admin broadcast and campaigns, push retry in the worker; runs on BullMQ when `queue` is installed | `auth-client`; `mail` for `--channels email` |
-| `payment` | `npm run g -- payment <payme\|click\|uzum\|paynet\|inpay> [--mode wallet\|order\|both]` | Invoices, a strict state machine with idempotent webhooks, client checkout, `admin/payments`, wallets with a locked ledger | `auth-client` |
+| `payment` | `npm run g -- payment <payme\|click\|uzum\|paynet\|inpay> [--mode wallet\|order\|both]` | Invoices, a strict state machine with idempotent webhooks, client checkout, `admin/payments`, wallets with a locked ledger | `auth-client` (and through it `sms` for `phone` or `mail` for `email` sign-in, whichever methods you picked) |
 
 Payment providers: `payme`, `click`, `uzum`, `paynet` and `inpay`. Run the add-on again with another provider to add it next to the first.
 
