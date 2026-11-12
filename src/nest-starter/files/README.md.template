@@ -16,7 +16,7 @@ npm run seed                    # boshlang'ich ma'lumotlar (ixtiyoriy)
 - Health: `http://localhost:3000/api/health` (`/live`, `/ready`)
 - Swagger: `http://localhost:3000/docs` (`/docs/admin`, `/docs/client`; `SWAGGER_ENABLED=false` bilan o'chadi, prod'da `SWAGGER_USER`/`SWAGGER_PASSWORD` shart)
 - OpenAPI: `npm run swagger:export` → `openapi/admin.json`, `openapi/client.json` (DB kerak emas); klient: `npm run g -- openapi-client --name admin --target ../admin/src/app/core/api`
-- Kirish: `POST /api/auth/sign-in` `{ email, password }` → `{ accessToken, user }`
+- Kirish: `POST /api/auth/sign-in` `{ email, password }` → `{ accessToken, refreshToken, expiresIn, user }` (birinchi super admin `.env` dagi `ADMIN_EMAIL`/`ADMIN_PASSWORD` dan yaratiladi)
 
 ## Ilovalar va skriptlar
 
@@ -47,10 +47,8 @@ apps/
 │   ├── main.ts                 # prefix /api, ValidationPipe, CORS, helmet, compression, shutdown hooks, Swagger
 │   ├── api.module.ts           # Config + Throttler + Database + Health + Auth + CRUD modullar
 │   ├── health/                 # /api/health (DB ping, heap), /live, /ready
-│   ├── auth/                   # JWT sign-in, AdminGuard, @AdminResource
-│   └── modules/                # generatsiya qilingan CRUD modullar<% if (apps.includes('bot')) { %>
-├── bot/src/                    # telegraf bot (DatabaseModule bilan)<% } %><% if (apps.includes('worker')) { %>
-├── worker/src/                 # @Cron vazifalar<% } %>
+│   ├── auth/                   # admin auth: sessiyalar, rollar, admin/admins, admin/roles, AdminGuard, @AdminResource
+│   └── modules/                # generatsiya qilingan CRUD modullar
 libs/
 ├── database/src/               # @app/database
 │   ├── base.entity.ts          # uuid id, createdAt, updatedAt, deletedAt (soft delete)
@@ -61,7 +59,9 @@ libs/
 │   ├── data-source.ts          # migratsiya CLI va seed uchun
 │   └── seed.ts                 # `npm run seed`
 └── common/src/                 # @app/common
+    ├── auth/                   # SessionManager (refresh rotatsiyasi, qurilmalar), argon2, login limiti
     ├── base/                   # BaseCrudService, BaseCrudController
+    ├── swagger/                # admin/client hujjatlari, ApiPaginatedResponse, DB'siz eksport
     ├── config/                 # env tekshiruvi, rate limit sozlamasi
     ├── dto/table-query.dto.ts  # PrimeNG TableQueryDTO + { count, data }
     ├── query/table-query.ts    # xavfsiz filter/sort/qidiruv
@@ -71,6 +71,15 @@ test/                           # e2e testlar (supertest)
 tools/migration.js              # migration:generate/create yordamchisi
 Dockerfile, docker-compose.yml  # api image (multi-stage) va lokal stack
 ```
+
+## Admin auth va sessiyalar
+
+- Tokenlar: access (`ADMIN_JWT_EXPIRES_IN`, 15m) va refresh (`ADMIN_REFRESH_EXPIRES_IN`, 30d), alohida secret'lar (`ADMIN_JWT_SECRET`, `ADMIN_REFRESH_SECRET`, har biri 32+ belgi).
+- Har kirish bitta sessiya (qurilma): `x-device-id`, `x-device-name`, `x-platform`, `x-app-version` header'lari saqlanadi. `ADMIN_SESSION_LIMIT` dan oshsa, eng eskisi chiqariladi.
+- `POST /api/auth/refresh` har safar yangi juftlik beradi; eski refresh qayta kelsa, butun sessiya bekor qilinadi.
+- Sessiyalar: `GET /api/auth/sessions`, `DELETE /api/auth/sessions/:id`, `DELETE /api/auth/sessions/others`, `POST /api/auth/sign-out`, `POST /api/auth/sign-out-all`, `POST /api/auth/change-password`.
+- Boshqaruv: `admin/admins` (bloklash, rol, parol, sessiyalar), `admin/roles` (ruxsatlar `<resource>.read|write`, `*` = super), `GET admin/permissions` (katalog).
+- Parol bilan kirish: IP bo'yicha `@AuthThrottle()` va email+IP bo'yicha 15 daqiqada 5 ta xato urinish.
 
 ## CRUD modul qo'shish
 
@@ -83,6 +92,13 @@ Natija:
 - `libs/database/src/entities/product.entity.ts` (+ `entities/index.ts` ga export)
 - `apps/api/src/modules/product/`: DTO (create/update/query), service, controller, module
 - `ProductModule` `apps/api/src/api.module.ts` ga avtomatik ulanadi
+- migratsiya (`migrations/` + `index.ts` ro'yxati) va ruxsatlar (`product.read`, `product.write`)
+
+Maydon turlari: `string(N)`, `text`, `int`, `number`, `decimal(p,s)`, `boolean`, `date`, `json`, `enum(a|b)`, `relation(Category)`, `relation(Tag[])`, `file(image)` (`upload` add-on kerak). Modifikatorlar: `unique`, `index`, `default(v)`, `min(n)`, `max(n)`, `cascade`, `set-null`, `label(field)`; oxiridagi `?` maydonni ixtiyoriy qiladi:
+
+```bash
+npm run g -- crud product --fields "name:string:unique,price:decimal(12,2):default(0),category:relation(Category),tags:relation(Tag[])?"
+```
 
 Endpointlar `admin/product` ostida va Angular `BaseCrudService` bilan bir xil:
 
@@ -97,6 +113,7 @@ Endpointlar `admin/product` ostida va Angular `BaseCrudService` bilan bir xil:
 | PUT | `/api/admin/product/:id` | tahrirlash |
 | DELETE | `/api/admin/product/:id` | arxivga o'tkazish |
 | GET | `/api/admin/product/repair/:id` | arxivdan tiklash |
+| GET | `/api/admin/product/options?search=&ids=` | select uchun `[{ id, label }]` |
 
 ## Migratsiyalar
 
