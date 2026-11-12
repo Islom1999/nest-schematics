@@ -63,6 +63,7 @@ export type RevokeReason =
   | 'session_limit'
   | 'replaced'
   | 'password_changed'
+  | 'password_reset'
   | 'blocked'
   | 'deleted';
 

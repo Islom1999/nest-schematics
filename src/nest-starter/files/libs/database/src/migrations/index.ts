@@ -1,5 +1,6 @@
 import { MigrationInterface } from 'typeorm';
 import { AdminAuth1700000000000 } from './1700000000000-admin-auth';
+import { AdminPortal1700000000001 } from './1700000000001-admin-portal';
 
 /**
  * Migrations in run order. Listed explicitly (not a glob) so they work from the
@@ -9,5 +10,6 @@ import { AdminAuth1700000000000 } from './1700000000000-admin-auth';
  */
 export const migrations: (new () => MigrationInterface)[] = [
   AdminAuth1700000000000,
+  AdminPortal1700000000001,
   // @ns:migrations
 ];

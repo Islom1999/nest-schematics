@@ -84,6 +84,15 @@ describe('ops', () => {
     });
   });
 
+  it('inserts navigation entries and search providers at their markers', () => {
+    tree.create('/nav.ts', 'export const NAVIGATION = [\n  { id: \'a\' },\n  // @ns:navigation\n];\n');
+    expect(MARKERS.navigation).toBe('// @ns:navigation');
+    expect(MARKERS.searchProviders).toBe('// @ns:search-providers');
+    expect(insertAtMarker(tree, '/nav.ts', MARKERS.navigation, "{ id: 'b', permission: 'b.read' },")).toBeTrue();
+    expect(insertAtMarker(tree, '/nav.ts', MARKERS.navigation, "{ id: 'b', permission: 'b.read' },")).toBeFalse();
+    expect(read(tree, '/nav.ts')).toBe("export const NAVIGATION = [\n  { id: 'a' },\n  { id: 'b', permission: 'b.read' },\n  // @ns:navigation\n];\n");
+  });
+
   it('extends an existing import from the same module', () => {
     addNamedImports(tree, '/api.module.ts', [{ name: 'Global', from: '@nestjs/common' }]);
     expect(read(tree, '/api.module.ts')).toContain(`import { Module, Global } from '@nestjs/common';`);

@@ -47,3 +47,24 @@ export class ChangePasswordDto {
   @MaxLength(PASSWORD_MAX)
   newPassword: string;
 }
+
+export class ForgotPasswordDto {
+  @ApiProperty({ example: 'admin@example.com' })
+  @IsEmail()
+  @MaxLength(254)
+  email: string;
+}
+
+export class ResetPasswordDto {
+  @ApiProperty({ description: 'The token from the reset email' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(256)
+  token: string;
+
+  @ApiProperty({ minLength: PASSWORD_MIN, maxLength: PASSWORD_MAX })
+  @IsString()
+  @MinLength(PASSWORD_MIN)
+  @MaxLength(PASSWORD_MAX)
+  password: string;
+}

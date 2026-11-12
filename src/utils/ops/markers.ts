@@ -23,6 +23,10 @@ export const MARKERS = {
   swaggerAdmin: '// @ns:swagger-admin',
   /** apps/api/src/config/swagger.ts, route prefixes of the client document. */
   swaggerClient: '// @ns:swagger-client',
+  /** apps/api/src/navigation/navigation.registry.ts, last entry of NAVIGATION (admin sidebar). */
+  navigation: '// @ns:navigation',
+  /** apps/api/src/search/search.module.ts, `providers` of SearchModule (add a `SearchProviderBase` class). */
+  searchProviders: '// @ns:search-providers',
   /** docker-compose.yml, end of `services:`. */
   composeServices: '# @ns:services',
   /** docker-compose.yml, end of `volumes:`. */

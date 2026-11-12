@@ -26,6 +26,18 @@ describe('mail add-on', () => {
       expect(tree.readContent(`${DIR}/mail.templates.ts`)).toContain('export function codeMail(');
     });
 
+    it('provides the admin auth AdminMailer port (any install order, nothing else to wire)', () => {
+      const module = tree.readContent(`${DIR}/mail.module.ts`);
+      expect(module).toContain('{ provide: ADMIN_MAILER, useExisting: MailAdminMailer }');
+      expect(module).toContain('exports: [MailService, ADMIN_MAILER]');
+      const mailer = tree.readContent(`${DIR}/mail-admin-mailer.ts`);
+      expect(mailer).toContain('implements AdminMailer');
+      expect(mailer).toContain('actionUrl: input.resetUrl');
+      expect(tree.readContent(`${DIR}/index.ts`)).toContain("export * from './mail-admin-mailer';");
+      // The port itself is a starter file; the starter's AuthModule injects it with @Optional().
+      expect(tree.readContent('/libs/common/src/auth/admin-mailer.ts')).toContain("export const ADMIN_MAILER = 'ADMIN_MAILER'");
+    });
+
     it('wires MailModule, env and the manifest; no extra dependency for resend', () => {
       expect(tree.readContent('/apps/api/src/api.module.ts')).toMatch(/imports: \[[\s\S]*MailModule/);
       const env = tree.readContent('/.env.example');

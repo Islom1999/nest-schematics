@@ -1,6 +1,6 @@
 import { UnitTestTree } from '@angular-devkit/schematics/testing';
 import { createRunner, createStarterTree } from '../testing/starter-tree';
-import { addMigration, addPermissions, addSeed } from '../utils/ops';
+import { addMigration, addPermissions, addSeed, insertAtMarker, MARKERS } from '../utils/ops';
 
 describe('nest-starter: admin auth', () => {
   let tree: UnitTestTree;
@@ -133,7 +133,7 @@ describe('nest-starter: admin auth', () => {
     expect(controller.indexOf("@Delete('sessions/others')")).toBeLessThan(controller.indexOf("@Delete('sessions/:id')"));
 
     const module = read('/apps/api/src/auth/auth.module.ts');
-    expect(module).toContain('TypeOrmModule.forFeature([Admin, AdminRole, AdminSession])');
+    expect(module).toContain('TypeOrmModule.forFeature([Admin, AdminRole, AdminSession, AdminPasswordReset])');
     expect(module).toContain('AdminsController, RolesController, PermissionsController');
     expect(module).toContain('AdminBootstrapService');
     expect(read('/apps/api/src/api.module.ts')).toContain('AuthModule');
@@ -174,6 +174,95 @@ describe('nest-starter: admin auth', () => {
     const pkg = JSON.parse(read('/package.json'));
     expect(pkg.dependencies.argon2).toBeDefined();
     expect(pkg.dependencies['@nestjs/jwt']).toBeDefined();
+  });
+
+  it('ships forgot/reset password with hashed single-use tokens and the AdminMailer port', () => {
+    const controller = read('/apps/api/src/auth/auth.controller.ts');
+    expect(controller).toContain("@Post('forgot-password')");
+    expect(controller).toContain("@Post('reset-password')");
+    expect(controller.match(/@AuthThrottle\(\)/g)?.length).toBe(3);
+    expect(controller.match(/@HttpCode\(HttpStatus\.NO_CONTENT\)/g)?.length).toBe(2);
+    const dto = read('/apps/api/src/auth/dto/sign-in.dto.ts');
+    expect(dto).toContain('export class ForgotPasswordDto');
+    expect(dto).toMatch(/class ResetPasswordDto[\s\S]*@MinLength\(PASSWORD_MIN\)/);
+
+    const service = read('/apps/api/src/auth/password-reset.service.ts');
+    expect(service).toContain('RESET_TOKEN_TTL_MIN = 30');
+    expect(service).toContain('tokenHash: sha256(token)');
+    expect(service).toContain('used_at IS NULL AND expires_at > now()');
+    expect(service).toContain("revokeAll(adminId, 'password_reset')");
+    expect(service).toContain('@Optional() @Inject(ADMIN_MAILER)');
+    expect(service).toContain("this.production ? ''");
+    expect(read('/apps/api/src/auth/auth.module.ts')).toContain('PasswordResetService');
+
+    const port = read('/libs/common/src/auth/admin-mailer.ts');
+    expect(port).toContain("export const ADMIN_MAILER = 'ADMIN_MAILER'");
+    expect(port).toContain('sendPasswordReset(mail: PasswordResetMail): Promise<void>');
+    expect(read('/libs/common/src/auth/index.ts')).toContain("export * from './admin-mailer';");
+    expect(read('/libs/common/src/auth/session-manager.ts')).toContain("'password_reset'");
+    expect(read('/.env.example')).toContain('ADMIN_APP_URL=http://localhost:4200');
+    expect(read('/libs/common/src/config/env.validation.ts')).toContain('ADMIN_APP_URL?: string;');
+  });
+
+  it('ships the portal tables as an explicit second migration', () => {
+    const index = read('/libs/database/src/migrations/index.ts');
+    expect(index).toContain("import { AdminPortal1700000000001 } from './1700000000001-admin-portal';");
+    expect(index.indexOf('AdminAuth1700000000000,')).toBeLessThan(index.indexOf('AdminPortal1700000000001,'));
+    expect(index.indexOf('AdminPortal1700000000001,')).toBeLessThan(index.indexOf('// @ns:migrations'));
+    const sql = read('/libs/database/src/migrations/1700000000001-admin-portal.ts');
+    for (const name of [
+      'admin_password_resets',
+      'admin_notifications',
+      'UQ_admin_password_resets_token_hash',
+      'IDX_admin_password_resets_admin_id',
+      'FK_admin_password_resets_admin_id',
+      'IDX_admin_notifications_admin_created',
+      'FK_admin_notifications_admin_id',
+    ]) {
+      expect(sql).toContain(`"${name}"`);
+    }
+    const barrel = read('/libs/database/src/entities/index.ts');
+    expect(barrel).toContain("export * from './admin-password-reset.entity';");
+    expect(barrel).toContain("export * from './admin-notification.entity';");
+    expect(read('/libs/database/src/entities/admin-password-reset.entity.ts')).toContain("'UQ_admin_password_resets_token_hash'");
+    expect(read('/libs/database/src/entities/admin-notification.entity.ts')).toContain("'IDX_admin_notifications_admin_created'");
+  });
+
+  it('ships navigation, search and the admin notifications behind markers and the admin Swagger document', () => {
+    const registry = read('/apps/api/src/navigation/navigation.registry.ts');
+    expect(registry).toContain('export const NAVIGATION: NavigationItem[]');
+    expect(registry).toContain("permission: 'admin.read'");
+    expect(registry).toContain("permission: 'role.read'");
+    expect(registry).toContain('// @ns:navigation');
+    expect(read('/apps/api/src/navigation/navigation.controller.ts')).toContain("@Controller('navigation')");
+    expect(read('/apps/api/src/navigation/navigation.controller.ts')).toContain('@UseGuards(AdminGuard)');
+
+    expect(read('/apps/api/src/search/search.module.ts')).toContain('// @ns:search-providers');
+    expect(read('/apps/api/src/search/search.module.ts')).toContain('AdminsSearchProvider');
+    expect(read('/apps/api/src/search/providers/admins-search.provider.ts')).toContain("permissions = ['admin.read']");
+    expect(read('/apps/api/src/search/providers/roles-search.provider.ts')).toContain("permissions = ['role.read']");
+    expect(read('/apps/api/src/search/search.controller.ts')).toContain("@Controller('search')");
+    expect(read('/apps/api/src/search/search.types.ts')).toContain('SEARCH_RESULT_LIMIT = 5');
+
+    expect(read('/apps/api/src/admin-notifications/admin-notifications.controller.ts')).toContain("@AdminResource('me/notifications')");
+    expect(read('/apps/api/src/admin-notifications/admin-notifications.controller.ts')).toContain("@Post(':id/read')");
+
+    const api = read('/apps/api/src/api.module.ts');
+    for (const m of ['NavigationModule', 'SearchModule', 'AdminNotificationsModule']) expect(api).toContain(m);
+    const swagger = read('/apps/api/src/config/swagger.ts');
+    expect(swagger).toMatch(/'navigation',\n\s+'search',\n\s+\/\/ @ns:swagger-admin/);
+  });
+
+  it('keeps the navigation and search markers usable by add-ons', () => {
+    const copy = tree.branch();
+    const nav = '/apps/api/src/navigation/navigation.registry.ts';
+    const entry = "{ id: 'billing', title: 'Billing', icon: 'i:b', link: '/billing', permission: 'invoice.read' },";
+    expect(insertAtMarker(copy, nav, MARKERS.navigation, entry)).toBeTrue();
+    expect(insertAtMarker(copy, nav, MARKERS.navigation, entry)).toBeFalse();
+    const text = copy.read(nav)!.toString('utf-8');
+    expect(text.indexOf("id: 'roles'")).toBeLessThan(text.indexOf("id: 'billing'"));
+    expect(text.indexOf("id: 'billing'")).toBeLessThan(text.lastIndexOf('// @ns:navigation'));
+    expect(insertAtMarker(copy, '/apps/api/src/search/search.module.ts', MARKERS.searchProviders, 'InvoicesSearchProvider,')).toBeTrue();
   });
 
   it('still lets the crud generator import AdminResource from the auth folder', async () => {

@@ -106,6 +106,8 @@ describe('MaintenanceGuard', () => {
   it('matches exempt prefixes on segment boundaries', () => {
     expect(isMaintenanceExempt('admin/settings')).toBe(true);
     expect(isMaintenanceExempt('auth/sign-in')).toBe(true);
+    expect(isMaintenanceExempt('navigation')).toBe(true);
+    expect(isMaintenanceExempt('search')).toBe(true);
     expect(isMaintenanceExempt('health/ready')).toBe(true);
     expect(isMaintenanceExempt('settings/public')).toBe(true);
     expect(isMaintenanceExempt('administrators')).toBe(false);

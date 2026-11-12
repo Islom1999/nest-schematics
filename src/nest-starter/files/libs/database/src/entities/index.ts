@@ -3,3 +3,5 @@ export * from './auth-session.base';
 export * from './admin-role.entity';
 export * from './admin.entity';
 export * from './admin-session.entity';
+export * from './admin-password-reset.entity';
+export * from './admin-notification.entity';

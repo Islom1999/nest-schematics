@@ -1,6 +1,8 @@
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Post, UseGuards } from '@nestjs/common';
 import {
+  ApiBadRequestResponse,
   ApiBearerAuth,
+  ApiNoContentResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
@@ -10,6 +12,7 @@ import {
 import { AuthThrottle, DeviceInfo, Public } from '@app/common';
 import { AdminGuard } from './admin.guard';
 import { AuthService } from './auth.service';
+import { PasswordResetService } from './password-reset.service';
 import { AdminPrincipal } from './auth.types';
 import { CurrentAdmin, Device } from './current-admin.decorator';
 import {
@@ -19,7 +22,14 @@ import {
   SessionDto,
   SuccessDto,
 } from './dto/auth-response.dto';
-import { ChangePasswordDto, RefreshTokenDto, SignInDto, SignInWithTokenDto } from './dto/sign-in.dto';
+import {
+  ChangePasswordDto,
+  ForgotPasswordDto,
+  RefreshTokenDto,
+  ResetPasswordDto,
+  SignInDto,
+  SignInWithTokenDto,
+} from './dto/sign-in.dto';
 
 /**
  * Admin authentication. Sign-in returns `{ accessToken, refreshToken,
@@ -32,7 +42,10 @@ import { ChangePasswordDto, RefreshTokenDto, SignInDto, SignInWithTokenDto } fro
 @UseGuards(AdminGuard)
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly auth: AuthService) {}
+  constructor(
+    private readonly auth: AuthService,
+    private readonly passwordReset: PasswordResetService,
+  ) {}
 
   @Public()
   @AuthThrottle()
@@ -121,5 +134,29 @@ export class AuthController {
   async changePassword(@CurrentAdmin() admin: AdminPrincipal, @Body() dto: ChangePasswordDto): Promise<SuccessDto> {
     await this.auth.changePassword(admin, dto.currentPassword, dto.newPassword);
     return { success: true };
+  }
+
+  @Public()
+  @AuthThrottle()
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Post('forgot-password')
+  @ApiOperation({
+    summary: 'Email a password reset link (always 204: it does not say whether the email has an account)',
+  })
+  @ApiNoContentResponse({ description: 'Accepted' })
+  @ApiTooManyRequestsResponse({ description: 'Rate limited per IP; one email per account per minute' })
+  async forgotPassword(@Body() dto: ForgotPasswordDto): Promise<void> {
+    await this.passwordReset.forgot(dto.email);
+  }
+
+  @Public()
+  @AuthThrottle()
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Post('reset-password')
+  @ApiOperation({ summary: 'Set a new password with the token from the reset email (single use); ends every session' })
+  @ApiNoContentResponse({ description: 'Password changed' })
+  @ApiBadRequestResponse({ description: 'Invalid or expired token, or the password breaks the policy' })
+  async resetPassword(@Body() dto: ResetPasswordDto): Promise<void> {
+    await this.passwordReset.reset(dto.token, dto.password);
   }
 }
