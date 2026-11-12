@@ -9,16 +9,16 @@
     "webpack": true,
     "tsConfigPath": "apps/api/tsconfig.app.json"
   },
-  "projects": {<% for (const app of apps) { %>
-    "<%= app %>": {
+  "projects": {
+    "api": {
       "type": "application",
-      "root": "apps/<%= app %>",
+      "root": "apps/api",
       "entryFile": "main",
-      "sourceRoot": "apps/<%= app %>/src",
+      "sourceRoot": "apps/api/src",
       "compilerOptions": {
-        "tsConfigPath": "apps/<%= app %>/tsconfig.app.json"
+        "tsConfigPath": "apps/api/tsconfig.app.json"
       }
-    },<% } %>
+    },
     "common": {
       "type": "library",
       "root": "libs/common",

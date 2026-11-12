@@ -2,7 +2,7 @@
   "$schema": "../node_modules/@angular-devkit/schematics/collection-schema.json",
   "schematics": {
     "nest-starter": {
-      "description": "Generate a NestJS + TypeORM (PostgreSQL) monorepo: apps/api (+bot, worker), libs/common, libs/database",
+      "description": "Generate a NestJS + TypeORM (PostgreSQL) monorepo: apps/api, libs/common, libs/database (--apps api,bot,worker adds those add-ons)",
       "factory": "./nest-starter/index#nestStarter",
       "schema": "./nest-starter/schema.json",
       "aliases": ["starter", "new"]
@@ -12,6 +12,21 @@
       "factory": "./nest-crud/index#nestCrud",
       "schema": "./nest-crud/schema.json",
       "aliases": ["crud", "resource"]
+    },
+    "worker": {
+      "description": "Add apps/worker: cron jobs with @nestjs/schedule (other add-ons register their jobs in it)",
+      "factory": "./add-ons/worker/index#worker",
+      "schema": "./add-ons/worker/schema.json"
+    },
+    "bot": {
+      "description": "Add apps/bot: Telegram bot on telegraf (BOT_TOKEN, empty = disabled)",
+      "factory": "./add-ons/bot/index#bot",
+      "schema": "./add-ons/bot/schema.json"
+    },
+    "api-logs": {
+      "description": "Add server_api_logs: global request log interceptor with secret masking, x-request-id, @LogPayment(), logCron(), admin routes and retention",
+      "factory": "./add-ons/api-logs/index#apiLogs",
+      "schema": "./add-ons/api-logs/schema.json"
     }
   }
 }

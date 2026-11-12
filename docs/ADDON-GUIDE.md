@@ -36,7 +36,12 @@ Register it in `src/collection.json` (`"factory": "./add-ons/<name>/index#<camel
      defaults, so the project still boots;
    - code blocks in `main.ts`: `insertAtMarker(tree, project.apiMain, MARKERS.bootstrap, code)`;
    - docker: `addComposeService(tree, name, yaml, volumes)`;
-   - entity barrel: `addBarrelExport(tree, '<entitiesDir>/index.ts', '<file>')`.
+   - entity barrel: `addBarrelExport(tree, '<entitiesDir>/index.ts', '<file>')`;
+   - new app in the monorepo: `addNestApp(tree, '<app>')` (nest-cli.json, scripts, aggregate build);
+   - cron jobs: if `hasWorker(tree)`, `addWorkerJob(tree, 'XJob', './jobs/x.job', { imports })` registers the
+     class above `// @ns:worker-jobs` in WorkerModule; otherwise print a hint and add an entry to
+     `DEFERRED_JOBS` in `src/add-ons/worker/index.ts`, so installing the worker later registers it
+     (example: `src/add-ons/api-logs/cleanup.ts`).
    If you need a new kind of edit, add a helper to `src/utils/ops` with a unit test in
    `ops_spec.ts` rather than string-replacing in your add-on.
 5. **Re-running changes nothing.** The e2e runs every step twice and fails on any diff.

@@ -8,7 +8,7 @@ const collectionPath = path.join(__dirname, '../collection.json');
 describe('nest-starter', () => {
   const runner = new SchematicTestRunner('nest-schematics', collectionPath);
 
-  describe('default (api, bot, worker)', () => {
+  describe('default (api only)', () => {
     let tree: UnitTestTree;
 
     beforeAll(async () => {
@@ -17,7 +17,7 @@ describe('nest-starter', () => {
 
     it('writes the add-on manifest, markers and the "g" script', () => {
       const manifest = JSON.parse(tree.readContent('/shop-api/nest-schematics.json'));
-      expect(Object.keys(manifest.features)).toEqual(['bot', 'worker']);
+      expect(manifest.features).toEqual({});
       expect(manifest.version).toMatch(/^\d+\.\d+\.\d+/);
       expect(tree.readContent('/shop-api/apps/api/src/main.ts')).toContain('// @ns:bootstrap');
       expect(tree.readContent('/shop-api/apps/api/src/main.ts')).toContain('// @ns:after-listen');
@@ -46,14 +46,6 @@ describe('nest-starter', () => {
         'apps/api/src/auth/auth.module.ts',
         'apps/api/src/auth/auth.service.ts',
         'apps/api/src/auth/auth.controller.ts',
-        'apps/bot/tsconfig.app.json',
-        'apps/bot/src/main.ts',
-        'apps/bot/src/bot.module.ts',
-        'apps/bot/src/bot.service.ts',
-        'apps/worker/tsconfig.app.json',
-        'apps/worker/src/main.ts',
-        'apps/worker/src/worker.module.ts',
-        'apps/worker/src/worker.service.ts',
         'libs/database/tsconfig.lib.json',
         'libs/database/src/index.ts',
         'libs/database/src/base.entity.ts',
@@ -84,22 +76,29 @@ describe('nest-starter', () => {
       expect(tree.files.filter((f) => f.endsWith('.template'))).toEqual([]);
     });
 
-    it('names package.json after the project with scripts per app', () => {
+    it('names package.json after the project, with api scripts only', () => {
       const pkg = JSON.parse(tree.readContent('/shop-api/package.json'));
       expect(pkg.name).toBe('shop-api');
-      expect(pkg.scripts.build).toBe('nest build api && nest build bot && nest build worker');
-      expect(pkg.scripts['start:dev:bot']).toBe('nest start bot --watch');
-      expect(pkg.scripts['start:prod:worker']).toBe('node dist/apps/worker/main');
-      expect(pkg.dependencies['telegraf']).toBeDefined();
-      expect(pkg.dependencies['@nestjs/schedule']).toBeDefined();
+      expect(pkg.scripts.build).toBe('nest build api');
+      expect(pkg.scripts['start:prod:api']).toBe('node dist/apps/api/main');
+      expect(pkg.scripts['start:dev:bot']).toBeUndefined();
+      expect(pkg.dependencies['telegraf']).toBeUndefined();
+      expect(pkg.dependencies['@nestjs/schedule']).toBeUndefined();
     });
 
-    it('declares every app and lib in nest-cli.json', () => {
+    it('declares the api and the libs in nest-cli.json', () => {
       const cli = JSON.parse(tree.readContent('/shop-api/nest-cli.json'));
       expect(cli.monorepo).toBeTrue();
       expect(cli.root).toBe('apps/api');
-      expect(Object.keys(cli.projects).sort()).toEqual(['api', 'bot', 'common', 'database', 'worker']);
+      expect(Object.keys(cli.projects)).toEqual(['api', 'common', 'database']);
+      expect(cli.projects.api.type).toBe('application');
       expect(cli.projects.database.type).toBe('library');
+    });
+
+    it('has no bot or worker app', () => {
+      expect(tree.files.some((f) => f.startsWith('/shop-api/apps/bot'))).toBeFalse();
+      expect(tree.files.some((f) => f.startsWith('/shop-api/apps/worker'))).toBeFalse();
+      expect(tree.readContent('/shop-api/.env.example')).not.toContain('BOT_TOKEN');
     });
 
     it('maps @app/common and @app/database in tsconfig', () => {
@@ -110,7 +109,6 @@ describe('nest-starter', () => {
 
     it('fills templated values', () => {
       expect(tree.readContent('/shop-api/.env.example')).toContain('DB_DATABASE=shop_api');
-      expect(tree.readContent('/shop-api/.env.example')).toContain('BOT_TOKEN=');
       expect(tree.readContent('/shop-api/apps/api/src/config/swagger.ts')).toContain("setTitle('ShopApi API')");
     });
 
@@ -126,28 +124,57 @@ describe('nest-starter', () => {
     });
   });
 
-  describe('--apps', () => {
-    it('creates only the api when --apps api', async () => {
-      const tree = await runner.runSchematic('nest-starter', { name: 'lean', apps: 'api', skipInstall: true });
-      expect(tree.files.some((f) => f.startsWith('/lean/apps/bot'))).toBeFalse();
-      expect(tree.files.some((f) => f.startsWith('/lean/apps/worker'))).toBeFalse();
-      const pkg = JSON.parse(tree.readContent('/lean/package.json'));
-      expect(pkg.scripts.build).toBe('nest build api');
-      expect(pkg.dependencies['telegraf']).toBeUndefined();
-      expect(pkg.dependencies['@nestjs/schedule']).toBeUndefined();
-      expect(JSON.parse(tree.readContent('/lean/nest-schematics.json')).features).toEqual({});
-      expect(Object.keys(JSON.parse(tree.readContent('/lean/nest-cli.json')).projects).sort()).toEqual([
-        'api',
-        'common',
-        'database',
-      ]);
-      expect(tree.readContent('/lean/.env.example')).not.toContain('BOT_TOKEN');
+  describe('--apps api,bot,worker', () => {
+    let tree: UnitTestTree;
+
+    beforeAll(async () => {
+      tree = await runner.runSchematic('nest-starter', { name: 'full', apps: 'api,bot,worker', skipInstall: true });
     });
 
-    it('always includes api', () => {
+    it('runs the bot and worker add-ons inside the new project', () => {
+      for (const file of [
+        'apps/bot/tsconfig.app.json',
+        'apps/bot/src/main.ts',
+        'apps/bot/src/bot.module.ts',
+        'apps/bot/src/bot.service.ts',
+        'apps/worker/tsconfig.app.json',
+        'apps/worker/src/main.ts',
+        'apps/worker/src/worker.module.ts',
+        'apps/worker/src/worker.service.ts',
+      ]) {
+        expect(tree.exists(`/full/${file}`)).withContext(file).toBeTrue();
+      }
+      expect(tree.files.some((f) => f.startsWith('/apps/'))).withContext('nothing outside the project').toBeFalse();
+      expect(tree.readContent('/full/apps/worker/src/worker.module.ts')).toContain('// @ns:worker-jobs');
+    });
+
+    it('records the features and patches package.json, nest-cli.json and .env.example', () => {
+      expect(Object.keys(JSON.parse(tree.readContent('/full/nest-schematics.json')).features)).toEqual(['bot', 'worker']);
+      const pkg = JSON.parse(tree.readContent('/full/package.json'));
+      expect(pkg.scripts.build).toBe('nest build api && nest build bot && nest build worker');
+      expect(pkg.scripts['start:dev:bot']).toBe('nest start bot --watch');
+      expect(pkg.scripts['start:prod:worker']).toBe('node dist/apps/worker/main');
+      expect(pkg.dependencies['telegraf']).toBeDefined();
+      expect(pkg.dependencies['@nestjs/schedule']).toBeDefined();
+      const cli = JSON.parse(tree.readContent('/full/nest-cli.json'));
+      expect(Object.keys(cli.projects)).toEqual(['api', 'bot', 'worker', 'common', 'database']);
+      expect(cli.projects.worker.sourceRoot).toBe('apps/worker/src');
+      expect(tree.readContent('/full/.env.example')).toContain('BOT_TOKEN=\n');
+      expect(tree.readContent('/full/libs/common/src/config/env.validation.ts')).toContain('BOT_TOKEN?: string;');
+    });
+
+    it('does not schedule an install per add-on', async () => {
+      const r = new SchematicTestRunner('nest-schematics', collectionPath);
+      await r.runSchematic('nest-starter', { name: 'one', apps: 'worker,bot' });
+      expect(r.tasks.filter((t) => t.name === 'node-package').length).toBe(1);
+    });
+  });
+
+  describe('parseApps', () => {
+    it('defaults to api and always includes it', () => {
+      expect(parseApps(undefined)).toEqual(['api']);
       expect(parseApps('worker')).toEqual(['api', 'worker']);
       expect(parseApps(' Bot , api ')).toEqual(['api', 'bot']);
-      expect(parseApps(undefined)).toEqual(['api', 'bot', 'worker']);
     });
 
     it('rejects unknown apps', () => {

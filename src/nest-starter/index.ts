@@ -6,10 +6,10 @@ import {
   apply,
   applyTemplates,
   chain,
-  filter,
   forEach,
   mergeWith,
   move,
+  schematic,
   url,
 } from '@angular-devkit/schematics';
 import { NodePackageInstallTask } from '@angular-devkit/schematics/tasks';
@@ -19,9 +19,13 @@ import { Schema } from './schema';
 
 export const KNOWN_APPS = ['api', 'bot', 'worker'] as const;
 
-/** `--apps "api,bot"` → ['api', 'bot']; api is always included and first. */
+/**
+ * `--apps "api,bot"` → ['api', 'bot']; api is always included and first.
+ * Default: api only. bot and worker are add-ons (`npm run g -- bot|worker`);
+ * `--apps` runs those add-ons right after the starter.
+ */
 export function parseApps(spec: string | undefined): string[] {
-  const requested = (spec ?? KNOWN_APPS.join(','))
+  const requested = (spec ?? 'api')
     .split(',')
     .map((a) => a.trim().toLowerCase())
     .filter(Boolean);
@@ -58,13 +62,10 @@ export function nestStarter(options: Schema): Rule {
     context.logger.info(`Apps: ${apps.join(', ')} | Libs: common, database`);
 
     // npm strips `.gitignore` when publishing, so the template keeps it as
-    // `gitignore` and it is renamed here.
+    // `gitignore` and it is renamed here. The starter itself only has apps/api;
+    // other apps come from their add-ons below.
     const templateSource = apply(url('./files'), [
-      filter((path) => {
-        const app = /^\/apps\/([^/]+)\//.exec(path)?.[1];
-        return !app || apps.includes(app);
-      }),
-      applyTemplates({ ...strings, name: projectName, apps, version: PACKAGE_VERSION }),
+      applyTemplates({ ...strings, name: projectName, apps: ['api'], version: PACKAGE_VERSION }),
       forEach((entry) => {
         if (/(^|\/)gitignore$/.test(entry.path)) {
           return {
@@ -83,6 +84,10 @@ export function nestStarter(options: Schema): Rule {
 
     return chain([
       mergeWith(templateSource),
+      // Same code path as `npm run g -- <app>` inside the project.
+      ...apps
+        .filter((app) => app !== 'api')
+        .map((app) => schematic(app, { root: targetPath, skipInstall: true })),
       (_tree: Tree, ctx: SchematicContext) => {
         ctx.logger.info('');
         ctx.logger.info('Next steps:');

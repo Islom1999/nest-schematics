@@ -21,6 +21,7 @@ npm run start:dev         # = start:dev:api
 <% for (const app of apps) { %>| `apps/<%= app %>` | <%= app === 'api' ? 'HTTP admin API' : app === 'bot' ? 'Telegram bot (telegraf, `BOT_TOKEN`)' : 'Cron/fon vazifalar (`@nestjs/schedule`)' %> | `npm run start:dev:<%= app %>` | `npm run build:<%= app %>` | `npm run start:prod:<%= app %>` |
 <% } %>
 `npm run build` builds every app into `dist/apps/<app>/main.js` (webpack).
+More apps: `npm run g -- worker` (cron, `@nestjs/schedule`) and `npm run g -- bot` (Telegram, telegraf).
 
 ## Tuzilma
 
