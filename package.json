@@ -1,6 +1,6 @@
 {
   "name": "nest-schematics",
-  "version": "0.1.1",
+  "version": "1.0.0",
   "description": "NestJS + TypeORM monorepo starter and lego-style generators (CRUD, auth, upload, payments, notifications, AI, logs), compatible with fuse-schematics (Angular)",
   "main": "src/collection.json",
   "schematics": "./src/collection.json",
