@@ -65,6 +65,7 @@ jobs:
       - run: npm ci
       - name: Tag matches package.json version
         run: test "v$(node -p 'require("./package.json").version')" = "$GITHUB_REF_NAME"
-      - run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      # Trusted publishing (OIDC) needs npm 11.5.1+; no token is used. Provenance is added automatically.
+      - name: Update npm
+        run: npm install -g npm@latest
+      - run: npm publish --access public
