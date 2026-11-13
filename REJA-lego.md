@@ -235,7 +235,7 @@ npm run g -- openapi-client --target ../shop-admin/src/app/core/api
 - GitHub Actions: build, unit testlar va **e2e**.
   - E2e: Postgres servisi bilan starter yaratiladi, `crud` x2 (relation bilan) va hamma add-on'lar qo'shiladi, keyin `build`, `lint`, `test`, `migration:run`, `swagger:export` ishlatiladi.
   - Hammasi ikki marta ishga tushirilib, idempotentlik tekshiriladi.
-- Publish: `v*` tag'da public npm'ga (`NPM_TOKEN` secret, `--provenance`). Nom: `nest-schematics` (public npm).
+- Publish: `v*` tag'da public npm'ga (npm trusted publishing / OIDC, token yo'q; provenance avtomatik). Nom: `nest-schematics` (public npm).
 
 ---
 

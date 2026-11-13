@@ -1,6 +1,6 @@
 # Patterns and the frontend ↔ backend contract
 
-The `fuse-nest-schematics` templates are drawn from three real NestJS backends and fitted to the API contract of the [fuse-schematics](../../fuse-schematics) Angular frontend.
+The `nest-schematics` templates are drawn from three real NestJS backends and fitted to the API contract of the [fuse-schematics](../../fuse-schematics) Angular frontend.
 
 | Short name | Path | Notes |
 |---|---|---|
@@ -206,11 +206,11 @@ The frontend reads these from `/docs-json` to build relation selects and upload 
 
 1. **`IBaseModel` snake_case vs camelCase.** The frontend `IBaseModel` (copied from asroortv) expects `created_at` and `version_id`. The backend returns camelCase (`createdAt`, `updatedAt`, `deletedAt`) and has no `version_id`. Should the frontend move to camelCase, or should the backend add a snake_case serializer?
 2. **Nest 12 / TypeORM 1.x.** The template targets Nest 11 + TypeORM 0.3 (CommonJS, all three projects use it). Nest 12 is ESM-only, so moving needs a separate starter version.
-3. **Nest CLI and `--fields`.** Nest CLI 11 rejects unknown flags (`error: unknown option '--fields'`). For now the README recommends `npx -p @angular-devkit/schematics-cli schematics fuse-nest-schematics:crud`. Should the generated project get `@angular-devkit/schematics-cli` as a devDependency plus a `"g:crud"` script?
-4. **Re-running `crud`** overwrites existing files (`MergeStrategy.Overwrite`), but the module registration and barrel export are not duplicated. Should it ask first, or add a `--force` flag?
+3. **Nest CLI and `--fields`.** *Resolved:* Nest CLI 11 still rejects unknown flags (`error: unknown option '--fields'`), so the package has its own CLI and the generated project has the script `"g": "nest-schematics"`: `npm run g -- crud product --fields "..."`.
+4. **Re-running `crud`.** *Resolved:* files you have edited are kept (with a warning); `--force` overwrites them. Registrations and barrel exports are never duplicated.
 5. **Fuse auth** in the frontend currently calls the mock relative path `api/auth/sign-in`, not `apiUrl`. The interceptor or AuthService needs to change.
 6. **i18n.** jobsy has its own i18n for error messages; it was left out (messages are in English).
-7. **A real admin entity and roles.** Auth is a skeleton: one admin from env with `permissions: ['*']`. The `@AdminResource` permissions (`product.read`/`product.write`) are already set up and work once roles are added.
-8. **Default apps.** `api,bot,worker` is the default. Is `api` alone better?
+7. **A real admin entity and roles.** *Resolved:* the starter has `admins`, `admin_roles` and `admin_sessions` (argon2, access + refresh tokens); the first super admin comes from `.env` (`ADMIN_EMAIL`, `ADMIN_PASSWORD`).
+8. **Default apps.** *Resolved:* `--apps` defaults to `api`; `bot` and `worker` are add-ons (`npm run g -- bot`, `npm run g -- worker`).
 9. ~~**Money fields.**~~ Answered: `decimal(p,s)` maps to `numeric(p,s)` with a transformer, so the API returns a JSON number (`199.99`). Values beyond 15 significant digits lose precision in JavaScript; use `string` for those.
 10. **Unknown filter → 400.** If the frontend's default grid always sends a `name` filter, a resource without a `name` field returns 400. Should unknown filters be ignored instead of rejected?

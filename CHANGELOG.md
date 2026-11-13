@@ -2,13 +2,28 @@
 
 ## Unreleased
 
+## 0.1.1 (2026-11-13)
+
+### Changed
+
+- CI: `v*` tag'da publish endi npm trusted publishing (OIDC) orqali ishlaydi: `NPM_TOKEN` secret'i kerak emas, job'ga `id-token: write` ruxsati berilgan, `npm@latest` o'rnatiladi (trusted publishing npm 11.5.1+ talab qiladi), tag `package.json` versiyasiga mos kelishi tekshiriladi, provenance avtomatik qo'shiladi.
+
+### Docs
+
+- README yangilandi: paket nomi `nest-schematics` (eski `fuse-nest-schematics` nomi hamma joydan olib tashlandi), `npx nest-schematics new shop` va `npm run g -- <add-on>` bilan tezkor boshlash, `--apps` sukut bo'yicha faqat `api` ekani, admin auth yo'llari, env kalitlari jadvali, Fuse frontend bilan ulash, "Ma'lum cheklovlar" va CI/publish tavsifi.
+- `docs/patterns.md` va `REJA-lego.md`: eski nom va `NPM_TOKEN` eslatmalari tuzatildi, hal bo'lgan ochiq savollar belgilandi.
+
+## 0.1.0 (2026-11-12)
+
+Birinchi versiya.
+
 ### Added
 
 - Paket nomi endi `nest-schematics` (public npm) va o'z CLI'si bor: `npx nest-schematics new shop`, loyiha ichida `npm run g -- crud ...` (`add` so'zi ixtiyoriy, `--dry-run`, `--force`, `--help`).
 - Add-on'lar uchun umumiy, idempotent yordamchilar (`src/utils/ops`): modul massivlari (`X.forRoot()` takrorlanmaydi), global provider'lar, import'lar, `package.json`, `.env.example` + `.env` + `env.validation.ts`, `main.ts` markerlari, docker-compose, manifest.
 - `nest-schematics.json` manifesti: o'rnatilgan bo'laklar va ularning opsiyalari; bo'laklar bir-biriga bog'liqligini tekshiradi.
 - `scripts/e2e.sh`: paketni pack qilib loyiha yaratadi, CRUD va `scripts/e2e.d/*` bo'laklarini qo'shadi, ikkinchi ishga tushirishda hech narsa o'zgarmasligini tekshiradi, build qiladi va API'ni PostgreSQL bilan ishga tushiradi.
-- GitHub Actions: testlar (Node 20/22), e2e (Postgres servisi), `v*` tag'da npm'ga publish (`NPM_TOKEN`, provenance).
+- GitHub Actions: testlar (Node 20/22), e2e (Postgres servisi), `v*` tag'da npm'ga publish.
 - `docs/ADDON-GUIDE.md`: yangi bo'lak yozish qoidalari.
 - Starter mustahkamlandi: sxema faqat migratsiyalar orqali (`DB_SYNCHRONIZE=false`, ishga tushganda advisory lock bilan migratsiya), `/api/health` (`/live`, `/ready`), global rate limit (`@nestjs/throttler`, `@AuthThrottle()`), seed mexanizmi (`npm run seed`, `seed` add-on), ESLint 9 + Prettier + Jest, Dockerfile va docker-compose.
 - Admin auth: `admins`, `admin_roles`, `admin_sessions`; argon2, access + refresh token (alohida secret'lar), refresh rotatsiyasi va qayta ishlatilgan token'da sessiyani bekor qilish, qurilmalar ro'yxati va bekor qilish, sessiya limiti, `admin/admins`, `admin/roles`, `admin/permissions`, birinchi super admin `.env` dan.
@@ -45,11 +60,9 @@
 - Uzum, Paynet va inPAY protokol tafsilotlari xotiradan va oldingi loyihalardan olingan; ishlatishdan oldin provayder hujjatlari bilan solishtiring.
 - Click tafsilotlari ham xotiradan yozilgan, uni ham hujjat bilan tekshiring.
 
-## 0.1.0 (2026-11-12)
+### Asos (starter va crud)
 
-Birinchi versiya.
-
-### nest-starter (`starter`, `new`)
+#### nest-starter (`starter`, `new`)
 
 - NestJS 11 + TypeORM 0.3 (PostgreSQL) monorepo: `apps/api` + ixtiyoriy `apps/bot` (telegraf) va `apps/worker` (`@nestjs/schedule`), `libs/database`, `libs/common`; webpack build.
 - `--apps`, `--directory`, `--skip-install`; `gitignore` → `.gitignore`.
@@ -57,7 +70,7 @@ Birinchi versiya.
 - Auth skeleton: `POST auth/sign-in`, `auth/sign-in-with-token`, `auth/me`; `@AdminResource` + `@AdminAccess` (fail-closed guard).
 - `BaseCrudService` / `BaseCrudController` (PrimeNG `TableQueryDTO` → `{ count, data }`, arxiv, tiklash), `AllExceptionsFilter`, `SnakeNamingStrategy`, migratsiya skriptlari.
 
-### nest-crud (`crud`, `resource`)
+#### nest-crud (`crud`, `resource`)
 
 - Entity (`libs/database/src/entities` + barrel), create/update/query DTO, service, controller (`admin/<nom>`), module.
 - `--fields` (`string|text|number|boolean|date|enum(a|b)`, `?` = nullable) — parser `src/utils/fields.ts` frontend bilan umumiy.
